@@ -155,5 +155,5 @@ class TextLabelDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        return *self.text_dataset[idx%len(self.text_dataset)], self.label_dataset[idx%len(self.label_dataset)]
+        return self.text_dataset[idx%len(self.text_dataset)][0], self.text_dataset[idx%len(self.text_dataset)][1], self.label_dataset[idx%len(self.label_dataset)]
 

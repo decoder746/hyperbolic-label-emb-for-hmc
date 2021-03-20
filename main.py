@@ -69,9 +69,9 @@ class BiLevelLoss(nn.Module):
         if self.only_label:
             return self.geo_loss(label_embs)
         loss = torch.mean(self.bce(outputs, targets),0)
-        if loss < 0:
-            logging.error(outputs, targets)
-            raise AssertionError
+        # if loss < 0:
+        #     logging.error(outputs, targets)
+        #     raise AssertionError
         if self.use_geodesic:
             loss1 = self.geo_loss(label_embs)
             loss = torch.cat((loss,loss1))
@@ -124,6 +124,32 @@ def eval(doc_model, label_model, dataloader, mode, Y):
     logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
     return micro_f.item(), macro_f.item()
 
+def eval_bilevel(combinedmodel, dataloader, mode, Y):
+    tp, fp, fn = 0, 0, 0
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(dataloader, 0)):
+            docs, labels, edges = data
+            docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
+            doc_emb, label_emb, _ = combinedmodel(docs, Y, edges)
+            dot = doc_emb @ label_emb.T
+            t = torch.sigmoid(dot)
+
+            y_pred = 1.0 * (t > 0.5)
+            y_true = labels
+
+            tp += (y_true * y_pred).sum(dim=0)
+            fp += ((1 - y_true) * y_pred).sum(dim=0)
+            fn += (y_true * (1 - y_pred)).sum(dim=0)
+
+    eps = 1e-7
+    p = tp.sum() / (tp.sum() + fp.sum() + eps)
+    r = tp.sum() / (tp.sum() + fn.sum() + eps)
+    micro_f = 2 * p * r / (p + r + eps)
+    macro_p = tp / (tp + fp + eps)
+    macro_r = tp / (tp + fn + eps)
+    macro_f = (2 * macro_p * macro_r / (macro_p + macro_r + eps)).mean()
+    logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
+    return micro_f.item(), macro_f.item()
 
 def train(
     doc_model, label_model, trainloader, valloader, testloader, criterion, optimizer, Y, epochs, save_folder
@@ -160,9 +186,19 @@ def train(
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
-def train_bilevel(epochs, trainloader, valloader, combinedmodel, args_model_init, Y, optimizer, wt_lr):
-    weights = torch.ones(args_model_init["n_labels"]).cuda()
+def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, wt_lr):
+    best_macro = 0.0
+    best_micro = 0.0
+    bests = {"micro": (0, 0, 0), "macro": (0, 0, 0)}  # micro, macro, epoch
+    test_f = []
+    if args_model_init["flat"]:
+        weights = torch.ones(args_model_init["n_labels"]).cuda()
+    else:
+        weights = torch.ones(args_model_init["n_labels"]+1).cuda()
     for t in range(epochs):
+        logging.info(f"Epoch {t+1}/{epochs}")
+        total_loss = 0
+        combinedmodel.train()
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
@@ -198,96 +234,24 @@ def train_bilevel(epochs, trainloader, valloader, combinedmodel, args_model_init
             dot = doc_emb @ label_emb.T
             losses = criterion(dot, labels, label_edges)
             loss = torch.dot(losses, weights)
+            total_loss += loss.item()
             loss.backward()
             optimizer.step()
-        if (t+1)%1 == 0:
-            print(weights)
-            print(f"EPOCH: {t+1}, train_loss: {loss.item()}")
-            print(" ")
-        if (t+1)% 5 == 0:
-            print("saving model")
-            torch.save(combinedmodel.state_dict(), f"combinedModelEpoch{t+1}.pt")
+            combinedmodel.eval()
+        combinedmodel.eval()
+        eval_bilevel(combinedmodel, trainloader, "Train", Y)
+        micro_val, macro_val = eval_bilevel(combinedmodel, valloader, "Val", Y)
+        micro_f, macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y)
+        test_f.append((micro_f, macro_f, t+1))
+        if macro_val > best_macro:
+            best_macro = macro_val
+            bests["macro"] = (micro_val, macro_val, t + 1)
+        if micro_val > best_micro:
+            best_micro = micro_val
+            bests["micro"] = (micro_val, macro_val, t + 1)
+    best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
+    logging.info(best_test)
     return weights
-
-# def get_new_weights(lambda_list, doc_model, label_model, trainloader, valloader, criterion, optimizer, e1, e2):
-#     L_hat_train = 0
-#     Ui_loss_params_list = []
-#     for i in range(len(lambda_list)):
-#         for param in doc_model.parameters():
-#             param.grad.data.zero_()
-#         for param in label_model.parameters():
-#             param.grad.data.zero_()
-#         L_Ui = 0
-#         trainloader2 = copy.deepcopy(trainloader)
-#         for j, data in tqdm(enumerate(trainloader2, 0)):
-#             docs, labels, _ = data
-#             docs, labels = docs.cuda(), labels.cuda()
-#             doc_emb = doc_model(docs)
-#             label_emb = label_model(Y)
-#             dot = doc_emb @ label_emb.T
-#             L_Ui += nn.BCELoss(dot[i],labels[i])
-#         grads_list_Ui = []
-#         for param in doc_model.parameters():
-#             grads_list_Ui.append(param.grad.view(-1))
-
-#         Ui_loss_params = torch.cat(grads_list_Ui)
-#         Ui_loss_params_list.append(Ui_loss_params)
-
-#         L_hat_train = L_hat_train + lambda_list[i]*L_Ui
-#     optimizer.zero_grad()
-#     L_hat_train.backward()
-#     optimizer.step()
-
-#     val_loss_list = []
-#     for i in range(len(lambda_list)):
-#         L_vi = 0
-#         valloader2 = copy.deepcopy(valloader)
-#         for j, data in tqdm(enumerate(valloader2, 0)):
-#             docs, labels, _ = data
-#             docs, labels = docs.cuda(), labels.cuda()
-#             doc_emb = doc_model(docs)
-#             label_emb = label_model(Y)
-#             dot = doc_emb @ label_emb.T
-#             L_vi += nn.BCELoss(dot[i],labels[i])
-#         val_loss_list.append(L_vi)
-#     i_t = np.argmax(np.array(val_loss_list))
-#     for param in doc_model.parameters():
-#         param.grad.data.zero_()
-#     val_loss_list[i_t].backward()
-#     grads_list_val = []
-#     for param in doc_model.parameters():
-#         grads_list_val.append(param.grad.view(-1))
-#     val_loss_params = torch.cat(grads_list_val)
-#     for i in range(len(lambda_list)):
-#         lambda_list[i] = lambda_list[i] + e1*e2*torch.dot(val_loss_params, Ui_loss_params_list[i])
-#     if lambda_list[i] < 0:
-#         lambda_list[i] = 0
-#     return lambda_list
-
-# def train_bilevel(doc_model, label_model, trainloader, valloader, testloader, criterion, optimizer, Y, epochs, n_labels,e1,e2):
-#     lambda_list = [1 for i in range(n_labels)]
-#     for epoch in range(epochs):
-#         logging.info(f"Epoch {epoch+1}/{epochs}")
-#         label_model = label_model.train()
-#         doc_model = doc_model.train()
-#         lambda_list = get_new_weights(lambda_list,doc_model,label_model,trainloader,valloader,criterion,optimizer,e1,e2)
-#         train_loss = 0
-#         for i in range(len(lambda_list)):
-#             L_Ui = 0
-#             trainloader2 = copy.deepcopy(trainloader)
-#             for j, data in tqdm(enumerate(trainloader2, 0)):
-#                 docs, labels, _ = data
-#                 docs, labels = docs.cuda(), labels.cuda()
-#                 doc_emb = doc_model(docs)
-#                 label_emb = label_model(Y)
-#                 dot = doc_emb @ label_emb.T
-#                 L_Ui += nn.BCELoss(dot[i],label_emb[i])
-#             train_loss = train_loss + lambda_list[i] * L_Ui
-#         if epoch % 1 == 0:
-#             print(train_loss.item())
-#         optimizer.zero_grad()
-#         train_loss.backward()
-#         optimizer.step()
 
 if __name__ == "__main__":
     torch.manual_seed(42)
@@ -331,21 +295,21 @@ if __name__ == "__main__":
         )
     else:
         trainloader = DataLoader(
-            trainset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True
+            trainset, batch_size=512, shuffle=True, num_workers=4, pin_memory=True
         )
 
     valloader = DataLoader(
-        valset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True)
+        valset, batch_size=512, shuffle=False, num_workers=4, pin_memory=True)
 
-    # try:
-    #     testset = pickle.load(open(f"{args.dataset}/test.pkl", "rb"))
-    # except:
-    #     testset = TextLabelDataset(f"{args.dataset}/{args.dataset}_test.json", f"{args.dataset}/{args.dataset}_labels.txt", trainvalset.text_dataset.vocab, 256)
-    #     pickle.dump(testset, open(f"{args.dataset}/test.pkl", "wb"))
+    try:
+        testset = pickle.load(open(f"{args.dataset}/test.pkl", "rb"))
+    except:
+        testset = TextLabelDataset(f"{args.dataset}/{args.dataset}_test.json", f"{args.dataset}/{args.dataset}_labels.txt", trainvalset.text_dataset.vocab, 256)
+        pickle.dump(testset, open(f"{args.dataset}/test.pkl", "wb"))
 
-    # testloader = DataLoader(
-    #     testset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True
-    # )
+    testloader = DataLoader(
+        testset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True
+    )
 
 
     glove_file = "GloVe/glove.6B.300d.txt"
@@ -430,11 +394,12 @@ if __name__ == "__main__":
         args.num_epochs,
         trainloader,
         valloader,
+        testloader,
         combinedmodel,
         args_model_init,
         Y,
         optimizer,
-        wt_lr= 0.001
+        wt_lr= 0.1
     )
     # train_bilevel(
     #     doc_model,
