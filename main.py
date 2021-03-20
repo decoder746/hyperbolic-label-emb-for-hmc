@@ -7,9 +7,10 @@ import os
 import logging
 import numpy as np
 import copy
+import higher
 
 from datasets import TextLabelDataset
-from models import LabelEmbedModel, TextCNN
+from models import LabelEmbedModel, TextCNN, CombinedModel
 from poincare_utils import PoincareDistance
 
 class LabelLoss(nn.Module):
@@ -55,6 +56,26 @@ class Loss(nn.Module):
             loss += self._lambda * loss1
         return loss
 
+class BiLevelLoss(nn.Module):
+    def __init__(self, use_geodesic=False, only_label=False):
+        super(Loss, self).__init__()
+        self.bce = nn.BCEWithLogitsLoss(reduction='none')
+        self.use_geodesic = use_geodesic
+        if use_geodesic or only_label:
+            self.geo_loss = LabelLoss()
+        self.only_label = only_label
+        
+    def forward(self, outputs, targets, label_embs):
+        if self.only_label:
+            return self.geo_loss(label_embs)
+        loss = torch.sum(self.bce(outputs, targets),0)
+        if loss < 0:
+            logging.error(outputs, targets)
+            raise AssertionError
+        if self.use_geodesic:
+            loss1 = self.geo_loss(label_embs)
+            loss = torch.cat((loss,loss1))
+        return loss
 
 def train_epoch(doc_model, label_model, trainloader, criterion, optimizer, Y):
     losses = []
@@ -139,85 +160,134 @@ def train(
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
-def get_new_weights(lambda_list, doc_model, label_model, trainloader, valloader, criterion, optimizer, e1, e2):
-    L_hat_train = 0
-    Ui_loss_params_list = []
-    for i in range(len(lambda_list)):
-        for param in doc_model.parameters():
-            param.grad.data.zero_()
-        for param in label_model.parameters():
-            param.grad.data.zero_()
-        L_Ui = 0
-        trainloader2 = copy.deepcopy(trainloader)
-        for j, data in tqdm(enumerate(trainloader2, 0)):
-            docs, labels, _ = data
-            docs, labels = docs.cuda(), labels.cuda()
-            doc_emb = doc_model(docs)
-            label_emb = label_model(Y)
-            dot = doc_emb @ label_emb.T
-            L_Ui += nn.BCELoss(dot[i],labels[i])
-        grads_list_Ui = []
-        for param in doc_model.parameters():
-            grads_list_Ui.append(param.grad.view(-1))
+def train_bilevel(epochs, trainloader, valloader, combinedmodel, args_model_init, Y, optimizer, wt_lr):
+    weights = torch.ones(args_model_init["n_labels"])
+    for t in range(epochs):
+        for i,data in tqdm(enumerate(trainloader,0)):
+            docs, labels, edges = data
+            docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
+            val_docs, val_labels, val_edges = next(iter(valloader))
+            val_docs, val_labels, val_edges = val_docs.cuda(), val_labels.cuda(), val_edges.cuda()
 
-        Ui_loss_params = torch.cat(grads_list_Ui)
-        Ui_loss_params_list.append(Ui_loss_params)
+            combinedmodel2 = CombinedModel(args_model_init)
+            combinedmodel2 = nn.DataParallel(combinedmodel2)
+            combinedmodel2 = combinedmodel2.cuda()
+            combinedmodel2.load_state_dict(copy.deepcopy(combinedmodel.state_dict()))
+            optimizer2 = torch.optim.Adam(params=combinedmodel2.parameters(),lr=args_model_init["lr"])
 
-        L_hat_train = L_hat_train + lambda_list[i]*L_Ui
-    optimizer.zero_grad()
-    L_hat_train.backward()
-    optimizer.step()
+            combinedmodel2.register_parameter('wts', torch.nn.Parameter(weights, requires_grad=True))
 
-    val_loss_list = []
-    for i in range(len(lambda_list)):
-        L_vi = 0
-        valloader2 = copy.deepcopy(valloader)
-        for j, data in tqdm(enumerate(valloader2, 0)):
-            docs, labels, _ = data
-            docs, labels = docs.cuda(), labels.cuda()
-            doc_emb = doc_model(docs)
-            label_emb = label_model(Y)
-            dot = doc_emb @ label_emb.T
-            L_vi += nn.BCELoss(dot[i],labels[i])
-        val_loss_list.append(L_vi)
-    i_t = np.argmax(np.array(val_loss_list))
-    for param in doc_model.parameters():
-        param.grad.data.zero_()
-    val_loss_list[i_t].backward()
-    grads_list_val = []
-    for param in doc_model.parameters():
-        grads_list_val.append(param.grad.view(-1))
-    val_loss_params = torch.cat(grads_list_val)
-    for i in range(len(lambda_list)):
-        lambda_list[i] = lambda_list[i] + e1*e2*torch.dot(val_loss_params, Ui_loss_params_list[i])
-    if lambda_list[i] < 0:
-        lambda_list[i] = 0
-    return lambda_list
-
-def train_bilevel(doc_model, label_model, trainloader, valloader, testloader, criterion, optimizer, Y, epochs, n_labels,e1,e2):
-    lambda_list = [1 for i in range(n_labels)]
-    for epoch in range(epochs):
-        logging.info(f"Epoch {epoch+1}/{epochs}")
-        label_model = label_model.train()
-        doc_model = doc_model.train()
-        lambda_list = get_new_weights(lambda_list,doc_model,label_model,trainloader,valloader,criterion,optimizer,e1,e2)
-        train_loss = 0
-        for i in range(len(lambda_list)):
-            L_Ui = 0
-            trainloader2 = copy.deepcopy(trainloader)
-            for j, data in tqdm(enumerate(trainloader2, 0)):
-                docs, labels, _ = data
-                docs, labels = docs.cuda(), labels.cuda()
-                doc_emb = doc_model(docs)
-                label_emb = label_model(Y)
+            with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
+                doc_emb, label_emb, label_edges = fmodel(docs,Y,edges)
                 dot = doc_emb @ label_emb.T
-                L_Ui += nn.BCELoss(dot[i],label_emb[i])
-            train_loss = train_loss + lambda_list[i] * L_Ui
-        if epoch % 1 == 0:
-            print(train_loss.item())
-        optimizer.zero_grad()
-        train_loss.backward()
-        optimizer.step()
+                losses = criterion(dot, labels, label_edges)
+                loss = torch.dot(losses, fmodel.wts)
+                fopt.step(loss)
+
+                val_doc_emb, val_label_emb, val_label_edges = fmodel(val_docs, Y, val_edges)
+                val_dot = val_doc_emb @ val_label_emb.T
+                val_losses = criterion(val_dot, val_labels, val_label_edges)
+                temp = torch.tensor([0]).cuda()
+                for d in range(args_model_init["n_labels"]):
+                    temp = torch.maximum(temp, val_losses[torch.where(Y==d)].sum())
+                wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0))[0]
+            weights = weights - wt_lr * wt_grads
+            weights = torch.clamp(weights, min=0)
+            optimizer.zero_grad()
+            doc_emb, label_emb, label_edges = combinedmodel(docs, Y, edges)
+            dot = doc_emb @ label_emb.T
+            losses = criterion(dot, labels, label_edges)
+            loss = torch.dot(losses, weights)
+            loss.backward()
+            optimizer.step()
+        if (t+1)%1 == 0:
+            print(weights)
+            print(f"EPOCH: {t+1}, train_loss: {loss.item()}")
+            print(" ")
+        if (t+1)% 5 == 0:
+            print("saving model")
+            torch.save(combinedmodel.state_dict(), f"combinedModelEpoch{t+1}.pt")
+    return weights
+
+# def get_new_weights(lambda_list, doc_model, label_model, trainloader, valloader, criterion, optimizer, e1, e2):
+#     L_hat_train = 0
+#     Ui_loss_params_list = []
+#     for i in range(len(lambda_list)):
+#         for param in doc_model.parameters():
+#             param.grad.data.zero_()
+#         for param in label_model.parameters():
+#             param.grad.data.zero_()
+#         L_Ui = 0
+#         trainloader2 = copy.deepcopy(trainloader)
+#         for j, data in tqdm(enumerate(trainloader2, 0)):
+#             docs, labels, _ = data
+#             docs, labels = docs.cuda(), labels.cuda()
+#             doc_emb = doc_model(docs)
+#             label_emb = label_model(Y)
+#             dot = doc_emb @ label_emb.T
+#             L_Ui += nn.BCELoss(dot[i],labels[i])
+#         grads_list_Ui = []
+#         for param in doc_model.parameters():
+#             grads_list_Ui.append(param.grad.view(-1))
+
+#         Ui_loss_params = torch.cat(grads_list_Ui)
+#         Ui_loss_params_list.append(Ui_loss_params)
+
+#         L_hat_train = L_hat_train + lambda_list[i]*L_Ui
+#     optimizer.zero_grad()
+#     L_hat_train.backward()
+#     optimizer.step()
+
+#     val_loss_list = []
+#     for i in range(len(lambda_list)):
+#         L_vi = 0
+#         valloader2 = copy.deepcopy(valloader)
+#         for j, data in tqdm(enumerate(valloader2, 0)):
+#             docs, labels, _ = data
+#             docs, labels = docs.cuda(), labels.cuda()
+#             doc_emb = doc_model(docs)
+#             label_emb = label_model(Y)
+#             dot = doc_emb @ label_emb.T
+#             L_vi += nn.BCELoss(dot[i],labels[i])
+#         val_loss_list.append(L_vi)
+#     i_t = np.argmax(np.array(val_loss_list))
+#     for param in doc_model.parameters():
+#         param.grad.data.zero_()
+#     val_loss_list[i_t].backward()
+#     grads_list_val = []
+#     for param in doc_model.parameters():
+#         grads_list_val.append(param.grad.view(-1))
+#     val_loss_params = torch.cat(grads_list_val)
+#     for i in range(len(lambda_list)):
+#         lambda_list[i] = lambda_list[i] + e1*e2*torch.dot(val_loss_params, Ui_loss_params_list[i])
+#     if lambda_list[i] < 0:
+#         lambda_list[i] = 0
+#     return lambda_list
+
+# def train_bilevel(doc_model, label_model, trainloader, valloader, testloader, criterion, optimizer, Y, epochs, n_labels,e1,e2):
+#     lambda_list = [1 for i in range(n_labels)]
+#     for epoch in range(epochs):
+#         logging.info(f"Epoch {epoch+1}/{epochs}")
+#         label_model = label_model.train()
+#         doc_model = doc_model.train()
+#         lambda_list = get_new_weights(lambda_list,doc_model,label_model,trainloader,valloader,criterion,optimizer,e1,e2)
+#         train_loss = 0
+#         for i in range(len(lambda_list)):
+#             L_Ui = 0
+#             trainloader2 = copy.deepcopy(trainloader)
+#             for j, data in tqdm(enumerate(trainloader2, 0)):
+#                 docs, labels, _ = data
+#                 docs, labels = docs.cuda(), labels.cuda()
+#                 doc_emb = doc_model(docs)
+#                 label_emb = label_model(Y)
+#                 dot = doc_emb @ label_emb.T
+#                 L_Ui += nn.BCELoss(dot[i],label_emb[i])
+#             train_loss = train_loss + lambda_list[i] * L_Ui
+#         if epoch % 1 == 0:
+#             print(train_loss.item())
+#         optimizer.zero_grad()
+#         train_loss.backward()
+#         optimizer.step()
 
 if __name__ == "__main__":
     torch.manual_seed(42)
@@ -286,58 +356,86 @@ if __name__ == "__main__":
     word_embed_dim = 300
 
 
-    # Model
-    doc_model = TextCNN(
-        trainvalset.text_dataset.vocab,
-        glove_file=glove_file,
-        emb_dim=emb_dim,
-        dropout_p=0.1,
-        word_embed_dim=word_embed_dim,
-    )
+    # # Model
+    # doc_model = TextCNN(
+    #     trainvalset.text_dataset.vocab,
+    #     glove_file=glove_file,
+    #     emb_dim=emb_dim,
+    #     dropout_p=0.1,
+    #     word_embed_dim=word_embed_dim,
+    # )
     doc_lr = 0.001
-    label_model = LabelEmbedModel(trainvalset.n_labels, emb_dim=emb_dim, dropout_p=0.6, eye=args.flat)
+    # label_model = LabelEmbedModel(trainvalset.n_labels, emb_dim=emb_dim, dropout_p=0.6, eye=args.flat)
 
-    if args.cascaded_step2:
-        label_model_pretrained = torch.load(args.pretrained_label_model)['label_model']
-        label_model.load_state_dict(label_model_pretrained)
+    # if args.cascaded_step2:
+    #     label_model_pretrained = torch.load(args.pretrained_label_model)['label_model']
+    #     label_model.load_state_dict(label_model_pretrained)
 
-    if args.flat or args.cascaded_step2:
-        for param in label_model.parameters():
-            param.require_grad = False
+    # if args.flat or args.cascaded_step2:
+    #     for param in label_model.parameters():
+    #         param.require_grad = False
 
-    doc_model = nn.DataParallel(doc_model)
-    label_model = nn.DataParallel(label_model)
+    # doc_model = nn.DataParallel(doc_model)
+    # label_model = nn.DataParallel(label_model)
 
-    doc_model = doc_model.cuda()
-    label_model = label_model.cuda()
+    # doc_model = doc_model.cuda()
+    # label_model = label_model.cuda()
 
-    # Loss and optimizer
-    criterion = Loss(
+    # # Loss and optimizer
+    # criterion = Loss(
+    #     use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
+    # )
+
+    criterion = BiLevelLoss(
         use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
     )
+    # optimizer = torch.optim.Adam([
+    #     {'params': doc_model.parameters(), 'lr': doc_lr},
+    #     {'params': label_model.parameters(), 'lr': 0.001}
+    # ])
 
-    optimizer = torch.optim.Adam([
-        {'params': doc_model.parameters(), 'lr': doc_lr},
-        {'params': label_model.parameters(), 'lr': 0.001}
-    ])
 
-
-    logging.info('Starting Training')
-    # Train and evaluate
+    # logging.info('Starting Training')
+    # # Train and evaluate
     Y = torch.arange(trainvalset.n_labels).cuda()
-    train(
-        doc_model,
-        label_model,
+    # train(
+    #     doc_model,
+    #     label_model,
+    #     trainloader,
+    #     valloader,
+    #     testloader,
+    #     criterion,
+    #     optimizer,
+    #     Y,
+    #     args.num_epochs,
+    #     args.exp_name
+    # )
+
+    args_model_init = {
+        "n_labels":trainvalset.n_labels,
+        "lr" : doc_lr,
+        "vocab" : trainvalset.text_dataset.vocab,
+        "glove_file" : glove_file,
+        "emb_dim" : emb_dim,
+        "drop_p_doc" : 0.1,
+        "word_embed_dim" : word_embed_dim,
+        "drop_p_label" : 0.6,
+        "flat" : args.flat
+    }
+    combinedmodel = CombinedModel(args_model_init)
+    combinedmodel = nn.DataParallel(combinedmodel)
+    combinedmodel = combinedmodel.cuda()
+    optimizer = torch.optim.Adam(params=combinedmodel.parameters(),lr=args_model_init["lr"])
+    train_bilevel(
+        args.num_epochs,
         trainloader,
         valloader,
-        testloader,
-        criterion,
-        optimizer,
+        combinedmodel,
+        args_model_init,
         Y,
-        args.num_epochs,
-        args.exp_name
+        optimizer,
+        wt_lr= 0.001
     )
-
     # train_bilevel(
     #     doc_model,
     #     label_model,

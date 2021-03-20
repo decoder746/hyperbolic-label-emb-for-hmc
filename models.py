@@ -84,3 +84,21 @@ class LabelEmbedModel(nn.Module):
         x is the list of labels eg [1,3,8]
         """
         return self.dropout(self.e(x))
+
+
+class CombinedModel(nn.Module):
+    def __init__(self, args_model_init):
+        self.doc_model = TextCNN(
+                args_model_init["vocab"],
+                glove_file=args_model_init["glove_file"],
+                emb_dim=args_model_init["emb_dim"],
+                dropout_p=args_model_init["drop_p_doc"],
+                word_embed_dim=args_model_init["word_embed_dim"],
+            )
+        self.label_model = LabelEmbedModel(args_model_init["n_labels"], emb_dim=args_model_init["emb_dim"], dropout_p=args_model_init["drop_p_label"], eye=args_model_init["flat"])
+        if args_model_init["flat"]:
+            for param in self.label_model.parameters():
+                param.require_grad = False
+
+    def forward(self, x, y, z):
+        return self.doc_model(x), self.label_model(y), self.label_model(z)
