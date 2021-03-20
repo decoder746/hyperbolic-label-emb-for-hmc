@@ -197,6 +197,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         weights = torch.ones(args_model_init["n_labels"]+1).cuda()
     for t in range(epochs):
         logging.info(f"Epoch {t+1}/{epochs}")
+        print(f"Epoch {t+1}/{epochs}")
         total_loss = 0
         combinedmodel.train()
         for i,data in tqdm(enumerate(trainloader,0)):
@@ -249,6 +250,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         if micro_val > best_micro:
             best_micro = micro_val
             bests["micro"] = (micro_val, macro_val, t + 1)
+        print(f"Total loss: {total_loss}")
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
     return weights
