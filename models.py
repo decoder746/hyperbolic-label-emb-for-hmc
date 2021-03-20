@@ -88,6 +88,7 @@ class LabelEmbedModel(nn.Module):
 
 class CombinedModel(nn.Module):
     def __init__(self, args_model_init):
+        super(CombinedModel, self).__init__()
         self.doc_model = TextCNN(
                 args_model_init["vocab"],
                 glove_file=args_model_init["glove_file"],

@@ -58,7 +58,7 @@ class Loss(nn.Module):
 
 class BiLevelLoss(nn.Module):
     def __init__(self, use_geodesic=False, only_label=False):
-        super(Loss, self).__init__()
+        super(BiLevelLoss, self).__init__()
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
         self.use_geodesic = use_geodesic
         if use_geodesic or only_label:
@@ -327,25 +327,25 @@ if __name__ == "__main__":
 
     if args.dataset=='yelp':
         trainloader = DataLoader(
-            trainset, batch_size=512, shuffle=True, num_workers=16, pin_memory=True
+            trainset, batch_size=512, shuffle=True, num_workers=4, pin_memory=True
         )
     else:
         trainloader = DataLoader(
-            trainset, batch_size=32, shuffle=True, num_workers=16, pin_memory=True
+            trainset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True
         )
 
     valloader = DataLoader(
-        valset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True)
+        valset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True)
 
-    try:
-        testset = pickle.load(open(f"{args.dataset}/test.pkl", "rb"))
-    except:
-        testset = TextLabelDataset(f"{args.dataset}/{args.dataset}_test.json", f"{args.dataset}/{args.dataset}_labels.txt", trainvalset.text_dataset.vocab, 256)
-        pickle.dump(testset, open(f"{args.dataset}/test.pkl", "wb"))
+    # try:
+    #     testset = pickle.load(open(f"{args.dataset}/test.pkl", "rb"))
+    # except:
+    #     testset = TextLabelDataset(f"{args.dataset}/{args.dataset}_test.json", f"{args.dataset}/{args.dataset}_labels.txt", trainvalset.text_dataset.vocab, 256)
+    #     pickle.dump(testset, open(f"{args.dataset}/test.pkl", "wb"))
 
-    testloader = DataLoader(
-        testset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True
-    )
+    # testloader = DataLoader(
+    #     testset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True
+    # )
 
 
     glove_file = "GloVe/glove.6B.300d.txt"
@@ -387,7 +387,7 @@ if __name__ == "__main__":
     # )
 
     criterion = BiLevelLoss(
-        use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
+        use_geodesic=args.joint, only_label=args.cascaded_step1
     )
     # optimizer = torch.optim.Adam([
     #     {'params': doc_model.parameters(), 'lr': doc_lr},
