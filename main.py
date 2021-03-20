@@ -48,9 +48,9 @@ class Loss(nn.Module):
             return self.geo_loss(label_embs)
 
         loss = self.bce(outputs, targets)
-        if loss < 0:
-            logging.error(outputs, targets)
-            raise AssertionError
+        # if loss < 0:
+        #     logging.error(outputs, targets)
+        #     raise AssertionError
         if self.use_geodesic:
             loss1 = self.geo_loss(label_embs)
             loss += self._lambda * loss1
@@ -161,7 +161,7 @@ def train(
     logging.info(best_test)
 
 def train_bilevel(epochs, trainloader, valloader, combinedmodel, args_model_init, Y, optimizer, wt_lr):
-    weights = torch.ones(args_model_init["n_labels"])
+    weights = torch.ones(args_model_init["n_labels"]).cuda()
     for t in range(epochs):
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
