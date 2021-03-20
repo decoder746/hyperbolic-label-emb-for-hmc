@@ -68,7 +68,7 @@ class BiLevelLoss(nn.Module):
     def forward(self, outputs, targets, label_embs):
         if self.only_label:
             return self.geo_loss(label_embs)
-        loss = torch.sum(self.bce(outputs, targets),0)
+        loss = torch.mean(self.bce(outputs, targets),0)
         if loss < 0:
             logging.error(outputs, targets)
             raise AssertionError
