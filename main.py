@@ -186,7 +186,7 @@ def train(
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
-def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, wt_lr):
+def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, save_folder, wt_lr):
     best_macro = 0.0
     best_micro = 0.0
     bests = {"micro": (0, 0, 0), "macro": (0, 0, 0)}  # micro, macro, epoch
@@ -238,7 +238,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
-            combinedmodel.eval()
+        logging.info(f"Total training loss: {total_loss}")
         combinedmodel.eval()
         eval_bilevel(combinedmodel, trainloader, "Train", Y)
         micro_val, macro_val = eval_bilevel(combinedmodel, valloader, "Val", Y)
@@ -251,6 +251,10 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             best_micro = micro_val
             bests["micro"] = (micro_val, macro_val, t + 1)
         print(f"Total loss: {total_loss}")
+        torch.save({
+            'combinedmodel': combinedmodel.state_dict(),
+            'optimizer': optimizer.state_dict()
+            }, save_folder+'/'+str(t))
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
     return weights
@@ -401,6 +405,7 @@ if __name__ == "__main__":
         args_model_init,
         Y,
         optimizer,
+        save_folder='checkpoints',
         wt_lr= 0.1
     )
     # train_bilevel(
