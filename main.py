@@ -149,7 +149,7 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y):
     macro_r = tp / (tp + fn + eps)
     macro_f = (2 * macro_p * macro_r / (macro_p + macro_r + eps)).mean()
     logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
-    return micro_f.item(), macro_f.item()
+    return micro_f.item(), macro_f.item(), (2 * macro_p * macro_r / (macro_p + macro_r + eps))
 
 def train(
     doc_model, label_model, trainloader, valloader, testloader, criterion, optimizer, Y, epochs, save_folder
@@ -186,7 +186,7 @@ def train(
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
-def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, save_folder, wt_lr):
+def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, criterion, save_folder, wt_lr):
     best_macro = 0.0
     best_micro = 0.0
     bests = {"micro": (0, 0, 0), "macro": (0, 0, 0)}  # micro, macro, epoch
@@ -241,8 +241,8 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         logging.info(f"Total training loss: {total_loss}")
         combinedmodel.eval()
         eval_bilevel(combinedmodel, trainloader, "Train", Y)
-        micro_val, macro_val = eval_bilevel(combinedmodel, valloader, "Val", Y)
-        micro_f, macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y)
+        micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y)
+        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y)
         test_f.append((micro_f, macro_f, t+1))
         if macro_val > best_macro:
             best_macro = macro_val
@@ -251,6 +251,14 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             best_micro = micro_val
             bests["micro"] = (micro_val, macro_val, t + 1)
         print(f"Total loss: {total_loss}")
+        with open("weights.txt",'a') as f:
+            string = ", ".join(list(map(str,weights)))
+            str_to_write = f"Epoch {t}/{epochs} \n" + string + "\n"
+            f.write(str_to_write)
+        with open("f1scores.txt",'a') as f:
+            string = "\n".join(list(map(str,per_label_macro_f)))
+            str_to_write = f"Epoch {t}/{epochs} \n" + string + "\n"
+            f.write(str_to_write)
         torch.save({
             'combinedmodel': combinedmodel.state_dict(),
             'optimizer': optimizer.state_dict()
@@ -405,6 +413,7 @@ if __name__ == "__main__":
         args_model_init,
         Y,
         optimizer,
+        criterion,
         save_folder='checkpoints',
         wt_lr= 0.1
     )
