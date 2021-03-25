@@ -124,16 +124,19 @@ def eval(doc_model, label_model, dataloader, mode, Y):
     logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
     return micro_f.item(), macro_f.item()
 
-def eval_bilevel(combinedmodel, dataloader, mode, Y):
+def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion):
     tp, fp, fn = 0, 0, 0
+    total_loss = 0
     with torch.no_grad():
         for i, data in tqdm(enumerate(dataloader, 0)):
             docs, labels, edges = data
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
-            doc_emb, label_emb, _ = combinedmodel(docs, Y, edges)
+            doc_emb, label_emb, label_edges = combinedmodel(docs, Y, edges)
             dot = doc_emb @ label_emb.T
+            losses = criterion(dot, labels, label_edges)
+            loss = torch.dot(losses, weights)
             t = torch.sigmoid(dot)
-
+            total_loss += loss.item()
             y_pred = 1.0 * (t > 0.5)
             y_true = labels
 
@@ -148,7 +151,7 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y):
     macro_p = tp / (tp + fp + eps)
     macro_r = tp / (tp + fn + eps)
     macro_f = (2 * macro_p * macro_r / (macro_p + macro_r + eps)).mean()
-    logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
+    logging.info(f"\t{mode}: MircoF1-{micro_f.item():.4f}, MacroF1-{macro_f.item():.4f}, Loss-{total_loss}")
     return micro_f.item(), macro_f.item(), (2 * macro_p * macro_r / (macro_p + macro_r + eps))
 
 def train(
@@ -238,11 +241,11 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
-        logging.info(f"Total training loss: {total_loss}")
+        # logging.info(f"Total training loss: {total_loss}")
         combinedmodel.eval()
-        eval_bilevel(combinedmodel, trainloader, "Train", Y)
-        micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y)
-        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y)
+        eval_bilevel(combinedmodel, trainloader, "Train", Y, weights, criterion)
+        micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y, weights, criterion)
+        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y, weights, criterion)
         test_f.append((micro_f, macro_f, t+1))
         if macro_val > best_macro:
             best_macro = macro_val
@@ -252,17 +255,17 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             bests["micro"] = (micro_val, macro_val, t + 1)
         print(f"Total loss: {total_loss}")
         with open("weights.txt",'a') as f:
-            string = ", ".join(list(map(str,weights)))
-            str_to_write = f"Epoch {t}/{epochs} \n" + string + "\n"
+            string = ", ".join(list(map(lambda x: str(x.item()),weights)))
+            str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
         with open("f1scores.txt",'a') as f:
-            string = "\n".join(list(map(str,per_label_macro_f)))
-            str_to_write = f"Epoch {t}/{epochs} \n" + string + "\n"
+            string = "\n".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
+            str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
-        torch.save({
-            'combinedmodel': combinedmodel.state_dict(),
-            'optimizer': optimizer.state_dict()
-            }, save_folder+'/'+str(t))
+        # torch.save({
+        #     'combinedmodel': combinedmodel.state_dict(),
+        #     'optimizer': optimizer.state_dict()
+        #     }, save_folder+'/'+str(t))
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
     return weights
@@ -417,17 +420,3 @@ if __name__ == "__main__":
         save_folder='checkpoints',
         wt_lr= 0.1
     )
-    # train_bilevel(
-    #     doc_model,
-    #     label_model,
-    #     trainloader,
-    #     valloader,
-    #     testloader,
-    #     criterion,
-    #     optimizer,
-    #     Y,
-    #     args.num_epochs,
-    #     trainvalset.n_labels,
-    #     e1=0.01,
-    #     e2=0.01
-    # )
