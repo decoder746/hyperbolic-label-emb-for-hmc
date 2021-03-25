@@ -96,15 +96,18 @@ def train_epoch(doc_model, label_model, trainloader, criterion, optimizer, Y):
     logging.info(f"\tTrain Loss {sum(losses)/len(losses):.6f}")
 
 
-def eval(doc_model, label_model, dataloader, mode, Y):
+def eval(doc_model, label_model, dataloader, mode, Y, criterion):
     tp, fp, fn = 0, 0, 0
+    total_loss = 0
     with torch.no_grad():
         for i, data in tqdm(enumerate(dataloader, 0)):
-            docs, labels, _ = data
-            docs, labels = docs.cuda(), labels.cuda()
+            docs, labels, edges = data
+            docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
 
             doc_emb = doc_model(docs)
             dot = doc_emb @ label_model(Y).T
+            loss = criterion(dot, labels, label_model(edges))
+            total_loss = loss.item()
             t = torch.sigmoid(dot)
 
             y_pred = 1.0 * (t > 0.5)
@@ -121,7 +124,7 @@ def eval(doc_model, label_model, dataloader, mode, Y):
     macro_p = tp / (tp + fp + eps)
     macro_r = tp / (tp + fn + eps)
     macro_f = (2 * macro_p * macro_r / (macro_p + macro_r + eps)).mean()
-    logging.info(f"\t{mode}: {micro_f.item():.4f}, {macro_f.item():.4f}")
+    logging.info(f"\t{mode}: MicroF1-{micro_f.item():.4f}, MacroF1-{macro_f.item():.4f}. Loss-{total_loss}")
     return micro_f.item(), macro_f.item()
 
 def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion):
@@ -169,9 +172,9 @@ def train(
 
         label_model = label_model.eval()
         doc_model = doc_model.eval()
-        eval(doc_model, label_model, trainloader, "Train", Y)
-        micro_val, macro_val = eval(doc_model, label_model, valloader, "Val", Y)
-        micro_f, macro_f = eval(doc_model, label_model, testloader, "Test", Y)
+        eval(doc_model, label_model, trainloader, "Train", Y, criterion)
+        micro_val, macro_val = eval(doc_model, label_model, valloader, "Val", Y, criterion)
+        micro_f, macro_f = eval(doc_model, label_model, testloader, "Test", Y, criterion)
         test_f.append((micro_f, macro_f, epoch+1))
         if macro_val > best_macro:
             best_macro = macro_val
@@ -180,12 +183,12 @@ def train(
             best_micro = micro_val
             bests["micro"] = (micro_val, macro_val, epoch + 1)
 
-        torch.save({
-            'label_model': label_model.state_dict(),
-            'doc_model': doc_model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'label_embs': label_model(Y),
-            }, save_folder+'/'+str(epoch))
+        # torch.save({
+        #     'label_model': label_model.state_dict(),
+        #     'doc_model': doc_model.state_dict(),
+        #     'optimizer': optimizer.state_dict(),
+        #     'label_embs': label_model(Y),
+        #     }, save_folder+'/'+str(epoch))
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
@@ -337,86 +340,86 @@ if __name__ == "__main__":
     word_embed_dim = 300
 
 
-    # # Model
-    # doc_model = TextCNN(
-    #     trainvalset.text_dataset.vocab,
-    #     glove_file=glove_file,
-    #     emb_dim=emb_dim,
-    #     dropout_p=0.1,
-    #     word_embed_dim=word_embed_dim,
-    # )
-    doc_lr = 0.001
-    # label_model = LabelEmbedModel(trainvalset.n_labels, emb_dim=emb_dim, dropout_p=0.6, eye=args.flat)
-
-    # if args.cascaded_step2:
-    #     label_model_pretrained = torch.load(args.pretrained_label_model)['label_model']
-    #     label_model.load_state_dict(label_model_pretrained)
-
-    # if args.flat or args.cascaded_step2:
-    #     for param in label_model.parameters():
-    #         param.require_grad = False
-
-    # doc_model = nn.DataParallel(doc_model)
-    # label_model = nn.DataParallel(label_model)
-
-    # doc_model = doc_model.cuda()
-    # label_model = label_model.cuda()
-
-    # # Loss and optimizer
-    # criterion = Loss(
-    #     use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
-    # )
-
-    criterion = BiLevelLoss(
-        use_geodesic=args.joint, only_label=args.cascaded_step1
+    # Model
+    doc_model = TextCNN(
+        trainvalset.text_dataset.vocab,
+        glove_file=glove_file,
+        emb_dim=emb_dim,
+        dropout_p=0.1,
+        word_embed_dim=word_embed_dim,
     )
-    # optimizer = torch.optim.Adam([
-    #     {'params': doc_model.parameters(), 'lr': doc_lr},
-    #     {'params': label_model.parameters(), 'lr': 0.001}
-    # ])
+    doc_lr = 0.001
+    label_model = LabelEmbedModel(trainvalset.n_labels, emb_dim=emb_dim, dropout_p=0.6, eye=args.flat)
+
+    if args.cascaded_step2:
+        label_model_pretrained = torch.load(args.pretrained_label_model)['label_model']
+        label_model.load_state_dict(label_model_pretrained)
+
+    if args.flat or args.cascaded_step2:
+        for param in label_model.parameters():
+            param.require_grad = False
+
+    doc_model = nn.DataParallel(doc_model)
+    label_model = nn.DataParallel(label_model)
+
+    doc_model = doc_model.cuda()
+    label_model = label_model.cuda()
+
+    # Loss and optimizer
+    criterion = Loss(
+        use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
+    )
+
+    # criterion = BiLevelLoss(
+    #     use_geodesic=args.joint, only_label=args.cascaded_step1
+    # )
+    optimizer = torch.optim.Adam([
+        {'params': doc_model.parameters(), 'lr': doc_lr},
+        {'params': label_model.parameters(), 'lr': 0.001}
+    ])
 
 
     # logging.info('Starting Training')
     # # Train and evaluate
     Y = torch.arange(trainvalset.n_labels).cuda()
-    # train(
-    #     doc_model,
-    #     label_model,
-    #     trainloader,
-    #     valloader,
-    #     testloader,
-    #     criterion,
-    #     optimizer,
-    #     Y,
-    #     args.num_epochs,
-    #     args.exp_name
-    # )
-
-    args_model_init = {
-        "n_labels":trainvalset.n_labels,
-        "lr" : doc_lr,
-        "vocab" : trainvalset.text_dataset.vocab,
-        "glove_file" : glove_file,
-        "emb_dim" : emb_dim,
-        "drop_p_doc" : 0.1,
-        "word_embed_dim" : word_embed_dim,
-        "drop_p_label" : 0.6,
-        "flat" : args.flat
-    }
-    combinedmodel = CombinedModel(args_model_init)
-    combinedmodel = nn.DataParallel(combinedmodel)
-    combinedmodel = combinedmodel.cuda()
-    optimizer = torch.optim.Adam(params=combinedmodel.parameters(),lr=args_model_init["lr"])
-    train_bilevel(
-        args.num_epochs,
+    train(
+        doc_model,
+        label_model,
         trainloader,
         valloader,
         testloader,
-        combinedmodel,
-        args_model_init,
-        Y,
-        optimizer,
         criterion,
-        save_folder='checkpoints',
-        wt_lr= 0.1
+        optimizer,
+        Y,
+        args.num_epochs,
+        args.exp_name
     )
+
+    # args_model_init = {
+    #     "n_labels":trainvalset.n_labels,
+    #     "lr" : doc_lr,
+    #     "vocab" : trainvalset.text_dataset.vocab,
+    #     "glove_file" : glove_file,
+    #     "emb_dim" : emb_dim,
+    #     "drop_p_doc" : 0.1,
+    #     "word_embed_dim" : word_embed_dim,
+    #     "drop_p_label" : 0.6,
+    #     "flat" : args.flat
+    # }
+    # combinedmodel = CombinedModel(args_model_init)
+    # combinedmodel = nn.DataParallel(combinedmodel)
+    # combinedmodel = combinedmodel.cuda()
+    # optimizer = torch.optim.Adam(params=combinedmodel.parameters(),lr=args_model_init["lr"])
+    # train_bilevel(
+    #     args.num_epochs,
+    #     trainloader,
+    #     valloader,
+    #     testloader,
+    #     combinedmodel,
+    #     args_model_init,
+    #     Y,
+    #     optimizer,
+    #     criterion,
+    #     save_folder='checkpoints',
+    #     wt_lr= 0.1
+    # )
