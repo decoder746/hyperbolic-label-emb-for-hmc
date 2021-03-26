@@ -206,7 +206,7 @@ class Loss(nn.Module):
 
         loss = self.bce(outputs, targets)
         if loss < 0:
-            logger.warning(outputs, targets)
+            # logger.warning(outputs, targets)
             raise AssertionError
         if self.use_geodesic:
             loss1 = self.geo_loss(label_embs)
