@@ -455,16 +455,16 @@ if __name__ == "__main__":
                 [int(0.9*len(trainvalset)), len(trainvalset)- int(0.9*len(trainvalset))])
 
     trainloader = DataLoader(
-        trainset, batch_size=32, shuffle=True, num_workers=16, pin_memory=True
+        trainset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True
     )
 
     valloader = DataLoader(
-        valset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True)
+        valset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True)
 
     testset = TextLabelDataset(0, int(2/3*args.dataset_size))
     
     testloader = DataLoader(
-        testset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True
+        testset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True
     )
 
 
@@ -474,7 +474,6 @@ if __name__ == "__main__":
     args_model_init = {
             "n_labels":trainvalset.n_labels,
             "lr" : doc_lr,
-            "vocab" : trainvalset.text_dataset.vocab,
             "emb_dim" : emb_dim,
             "drop_p_doc" : 0.1,
             "drop_p_label" : 0.6,
