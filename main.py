@@ -74,7 +74,7 @@ class BiLevelLoss(nn.Module):
         #     raise AssertionError
         if self.use_geodesic:
             loss1 = self.geo_loss(label_embs)
-            loss = torch.cat((loss,loss1))
+            return loss, loss1
         return loss
 
 def train_epoch(doc_model, label_model, trainloader, criterion, optimizer, Y):
@@ -127,7 +127,7 @@ def eval(doc_model, label_model, dataloader, mode, Y, criterion):
     logging.info(f"\t{mode}: MicroF1-{micro_f.item():.4f}, MacroF1-{macro_f.item():.4f}. Loss-{total_loss}")
     return micro_f.item(), macro_f.item()
 
-def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion):
+def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion, joint):
     tp, fp, fn = 0, 0, 0
     total_loss = 0
     total_geodesic_loss = 0
@@ -138,12 +138,17 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion):
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             doc_emb, label_emb, label_edges = combinedmodel(docs, Y, edges)
             dot = doc_emb @ label_emb.T
-            losses = criterion(dot, labels, label_edges)
-            total_geodesic_loss += losses[-1].item()
-            total_non_geodesic_loss += (losses.sum() - losses[-1]).item() / (losses.numpy().size - 1)
-            loss = torch.dot(losses, weights)
+            if joint:
+                losses, geo_loss = criterion(dot, labels, label_edges)
+                loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
+                total_loss += loss.item()
+                total_geodesic_loss += geo_loss.item()
+                total_non_geodesic_loss += losses.mean().item()
+            else:
+                losses = criterion(dot, labels, label_edges)
+                loss = torch.dot(losses, weights)
+                total_loss += loss.item()
             t = torch.sigmoid(dot)
-            total_loss += loss.item()
             y_pred = 1.0 * (t > 0.5)
             y_true = labels
 
@@ -227,32 +232,45 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
                 doc_emb, label_emb, label_edges = fmodel(docs,Y,edges)
                 dot = doc_emb @ label_emb.T
-                losses = criterion(dot, labels, label_edges)
-                loss = torch.dot(losses, fmodel.wts)
-                fopt.step(loss)
-
+                if args_model_init["joint"]:
+                    losses, geo_loss = criterion(dot, labels, label_edges)
+                    loss = torch.dot(losses, fmodel.wts[:-1]) + fmodel.wts[-1]*geo_loss
+                    fopt.step(loss)
+                else:
+                    losses = criterion(dot, labels, label_edges)
+                    loss = torch.dot(losses, fmodel.wts)
+                    fopt.step(loss)
                 val_doc_emb, val_label_emb, val_label_edges = fmodel(val_docs, Y, val_edges)
                 val_dot = val_doc_emb @ val_label_emb.T
-                val_losses = criterion(val_dot, val_labels, val_label_edges)
+                if args_model_init["joint"]:
+                    val_losses, geo_loss = criterion(val_dot, val_labels, val_label_edges)
+                else:
+                    val_losses = criterion(val_dot, val_labels, val_label_edges)
                 temp = torch.tensor([0]).cuda()
                 for d in range(args_model_init["n_labels"]):
                     temp = torch.maximum(temp, val_losses[torch.where(Y==d)].sum())
+                if args_model_init["joint"]:
+                    temp = torch.maximum(temp, geo_loss)
                 wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0))[0]
             weights = weights - wt_lr * wt_grads
             weights = torch.clamp(weights, min=0)
             optimizer.zero_grad()
             doc_emb, label_emb, label_edges = combinedmodel(docs, Y, edges)
             dot = doc_emb @ label_emb.T
-            losses = criterion(dot, labels, label_edges)
-            loss = torch.dot(losses, weights)
+            if args_model_init["joint"]:
+                losses, geo_loss = criterion(dot, labels, label_edges)
+                loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
+            else:
+                losses = criterion(dot, labels, label_edges)
+                loss = torch.dot(losses, weights)
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
         # logging.info(f"Total training loss: {total_loss}")
         combinedmodel.eval()
-        eval_bilevel(combinedmodel, trainloader, "Train", Y, weights, criterion)
-        micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y, weights, criterion)
-        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y, weights, criterion)
+        eval_bilevel(combinedmodel, trainloader, "Train", Y, weights, criterion, args_model_init["joint"])
+        micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y, weights, criterion, args_model_init["joint"])
+        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y, weights, criterion, args_model_init["joint"])
         test_f.append((micro_f, macro_f, t+1))
         if macro_val > best_macro:
             best_macro = macro_val
@@ -408,7 +426,8 @@ if __name__ == "__main__":
         "drop_p_doc" : 0.1,
         "word_embed_dim" : word_embed_dim,
         "drop_p_label" : 0.6,
-        "flat" : args.flat
+        "flat" : args.flat,
+        "joint" : args.joint
     }
     combinedmodel = CombinedModel(args_model_init)
     combinedmodel = nn.DataParallel(combinedmodel)
