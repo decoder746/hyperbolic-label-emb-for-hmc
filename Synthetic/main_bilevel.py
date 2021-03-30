@@ -210,6 +210,7 @@ class BiLevelLoss(nn.Module):
         super(BiLevelLoss, self).__init__()
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
         self.use_geodesic = use_geodesic
+        self.scale_factor = 1
         if use_geodesic or only_label:
             self.geo_loss = LabelLoss()
         self.only_label = only_label
@@ -222,10 +223,9 @@ class BiLevelLoss(nn.Module):
         #     logging.error(outputs, targets)
         #     raise AssertionError
         if self.use_geodesic:
-            loss1 = self.geo_loss(label_embs)
-            loss = torch.cat((loss,loss1))
+            loss1 = self.geo_loss(label_embs) / self.scale_factor
+            return loss, loss1
         return loss
-
 def train_epoch(doc_model, label_model, trainloader, criterion, optimizer, Y):
     losses = []
     for i, data in tqdm(enumerate(trainloader, 0)):
