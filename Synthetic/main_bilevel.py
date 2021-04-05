@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import copy
 import higher
+import random
 
 from poincare_utils import PoincareDistance
 
@@ -43,10 +44,15 @@ class Synthetic(Dataset):
         self.y = []
         self.size = size
         self.drop_prob = drop_prob
+        self.per_label = dict(zip(list(range(21)),[0]*21))
         for i in range(self.size):
             x, y = self.getitem(i)
+            for ele in y:
+                self.per_label[ele] += 1
             self.x.append(x)
             self.y.append(y)
+
+        print(self.per_label)
 
     def __len__(self):
         return self.size
@@ -70,6 +76,10 @@ class Synthetic(Dataset):
         i = np.random.randint(len(self.means))
         x = Synthetic.sample(self.means[i], self.covs[i]*np.eye(2))
         y = [i, 20]
+        if i==0:
+            a = random.uniform(0,1)
+            if a > 0.5:
+                y.append(1)
         if i in [0,1,4,5]:
             y.append(16)
         elif i in [2,3,6,7]:
@@ -226,6 +236,7 @@ class BiLevelLoss(nn.Module):
             loss1 = self.geo_loss(label_embs) / self.scale_factor
             return loss, loss1
         return loss
+
 def train_epoch(doc_model, label_model, trainloader, criterion, optimizer, Y):
     losses = []
     for i, data in tqdm(enumerate(trainloader, 0)):
@@ -350,7 +361,7 @@ def train(
     best_test = {'micro': test_f[bests['micro'][2]-1], 'macro': test_f[bests['macro'][2]-1]}
     logging.info(best_test)
 
-def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, criterion, save_folder, wt_lr):
+def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, criterion, exp_name, save_folder, wt_lr):
     best_macro = 0.0
     best_micro = 0.0
     bests = {"micro": (0, 0, 0), "macro": (0, 0, 0)}  # micro, macro, epoch
@@ -428,11 +439,11 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             best_micro = micro_val
             bests["micro"] = (micro_val, macro_val, t + 1)
         print(f"Total loss: {total_loss}")
-        with open("weights.txt",'a') as f:
+        with open(exp_name+"/weights.txt",'a') as f:
             string = ", ".join(list(map(lambda x: str(x.item()),weights)))
             str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
-        with open("f1scores.txt",'a') as f:
+        with open(exp_name + "/f1scores.txt",'a') as f:
             string = "\n".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
             str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
@@ -533,6 +544,7 @@ if __name__ == "__main__":
             Y,
             optimizer,
             criterion,
+            args.exp_name,
             save_folder='checkpoints',
             wt_lr= 0.1
         )
