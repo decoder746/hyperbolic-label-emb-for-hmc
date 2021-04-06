@@ -53,6 +53,7 @@ class Synthetic(Dataset):
             self.y.append(y)
 
         print(self.per_label)
+        logging.info(f"{self.per_label}")
 
     def __len__(self):
         return self.size
