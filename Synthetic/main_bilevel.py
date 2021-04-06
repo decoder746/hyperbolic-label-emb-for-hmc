@@ -46,8 +46,8 @@ class Synthetic(Dataset):
         self.drop_prob = drop_prob
         self.per_label = dict(zip(list(range(21)),[0]*21))
         for i in range(self.size):
-            x, y = self.getitem(i)
-            for ele in y:
+            x, y, y_old = self.getitem(i)
+            for ele in y_old:
                 self.per_label[ele] += 1
             self.x.append(x)
             self.y.append(y)
@@ -97,8 +97,9 @@ class Synthetic(Dataset):
             for j in y:
                 self.N[i,j]+=1
                 self.N[j,i]+=1
+        y_old = y
         y = self.multihot(y)
-        return torch.tensor(x, dtype=torch.float), y
+        return torch.tensor(x, dtype=torch.float), y, y_old
 
 
 class TextLabelDataset(Dataset):
