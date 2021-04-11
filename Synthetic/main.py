@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from tokenizers import BertWordPieceTokenizer
+import random
 import torch.nn.functional as F
 import pickle
 import numpy as np
@@ -62,10 +63,16 @@ class Synthetic(Dataset):
         self.y = []
         self.size = size
         self.drop_prob = drop_prob
+        self.per_label = dict(zip(list(range(21)),[0]*21))
         for i in range(self.size):
-            x, y = self.getitem(i)
+            x, y, y_old = self.getitem(i)
+            for ele in y_old:
+                self.per_label[ele] += 1
             self.x.append(x)
             self.y.append(y)
+
+        print(self.per_label)
+        logging.info(f"{self.per_label}")
 
     def __len__(self):
         return self.size
@@ -89,6 +96,10 @@ class Synthetic(Dataset):
         i = np.random.randint(len(self.means))
         x = Synthetic.sample(self.means[i], self.covs[i]*np.eye(2))
         y = [i, 20]
+        if i==0:
+            a = random.uniform(0,1)
+            if a > 0.5:
+                y.append(1)
         if i in [0,1,4,5]:
             y.append(16)
         elif i in [2,3,6,7]:
@@ -106,8 +117,9 @@ class Synthetic(Dataset):
             for j in y:
                 self.N[i,j]+=1
                 self.N[j,i]+=1
+        y_old = y
         y = self.multihot(y)
-        return torch.tensor(x, dtype=torch.float), y
+        return torch.tensor(x, dtype=torch.float), y, y_old
 
 
 class TextLabelDataset(Dataset):
@@ -331,16 +343,16 @@ if __name__ == "__main__":
                 [int(0.9*len(trainvalset)), len(trainvalset)- int(0.9*len(trainvalset))])
 
     trainloader = DataLoader(
-        trainset, batch_size=32, shuffle=True, num_workers=16, pin_memory=True
+        trainset, batch_size=32, shuffle=True, num_workers=4, pin_memory=True
     )
 
     valloader = DataLoader(
-        valset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True)
+        valset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True)
 
     testset = TextLabelDataset(0, int(2/3*args.dataset_size))
     
     testloader = DataLoader(
-        testset, batch_size=1024, shuffle=False, num_workers=16, pin_memory=True
+        testset, batch_size=1024, shuffle=False, num_workers=4, pin_memory=True
     )
 
 
