@@ -53,11 +53,12 @@ class LabelDataset(Dataset):
 '''
 
 class Synthetic(Dataset):
-    def __init__(self, drop_prob, size):
+    def __init__(self, drop_prob, size, change_prob):
         side = 4
         n = side//2
         self.means = [(x,y) for x in range(-n,n) for y in range(-n,n)]
         self.covs = [0.01 for x in range(-n,n) for y in range(-n,n)]
+        self.change_prob = change_prob
         self.N = np.zeros((21,21))
         self.x = []
         self.y = []
@@ -98,7 +99,7 @@ class Synthetic(Dataset):
         y = [i, 20]
         if i==0:
             a = random.uniform(0,1)
-            if a > 0.5:
+            if a > 1 - self.change_prob:
                 y.append(1)
         if i in [0,1,4,5]:
             y.append(16)
@@ -123,10 +124,10 @@ class Synthetic(Dataset):
 
 
 class TextLabelDataset(Dataset):
-    def __init__(self, drop_prob, size):
+    def __init__(self, drop_prob, size, change_prob = 0.0):
         super(TextLabelDataset, self).__init__()
 
-        self.text_dataset = Synthetic(drop_prob, size)
+        self.text_dataset = Synthetic(drop_prob, size, change_prob)
         
         similarity_matrix = torch.tensor(self.text_dataset.N)
         n_labels = 21
@@ -328,6 +329,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', default=30, type=int)
     parser.add_argument('--drop_prob', default=0.0, type=float)
     parser.add_argument('--dataset_size', default=20000, type=int)
+    parser.add_argument('--change_prob', default=0.5, type=float)
     args = parser.parse_args()
 
 
@@ -336,7 +338,7 @@ if __name__ == "__main__":
     logging.basicConfig(filename=args.exp_name+'/res.txt', level=logging.DEBUG)
     logging.info(args)
 
-    trainvalset = TextLabelDataset(args.drop_prob, args.dataset_size)
+    trainvalset = TextLabelDataset(args.drop_prob, args.dataset_size, args.change_prob)
 
     # Split into train and val sets
     trainset, valset = torch.utils.data.dataset.random_split(trainvalset, 
