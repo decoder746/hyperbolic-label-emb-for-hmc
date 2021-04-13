@@ -219,11 +219,11 @@ class Loss(nn.Module):
         return loss
 
 class BiLevelLoss(nn.Module):
-    def __init__(self, use_geodesic=False, only_label=False):
+    def __init__(self, scale = 1, use_geodesic=False, only_label=False):
         super(BiLevelLoss, self).__init__()
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
         self.use_geodesic = use_geodesic
-        self.scale_factor = 1
+        self.scale_factor = scale
         if use_geodesic or only_label:
             self.geo_loss = LabelLoss()
         self.only_label = only_label
@@ -477,6 +477,7 @@ if __name__ == "__main__":
     parser.add_argument('--drop_prob', default=0.0, type=float)
     parser.add_argument('--dataset_size', default=20000, type=int)
     parser.add_argument('--change_prob', default=0.5,type=float)
+    parser.add_argument('--scale',default=1,type=float)
     args = parser.parse_args()
 
 
@@ -530,7 +531,7 @@ if __name__ == "__main__":
     combinedmodel = combinedmodel.cuda()
 
     # Loss and optimizer
-    criterion = BiLevelLoss(use_geodesic=args.joint, only_label=args.cascaded_step1)
+    criterion = BiLevelLoss(args.scale, use_geodesic=args.joint, only_label=args.cascaded_step1)
 
     optimizer = torch.optim.Adam(combinedmodel.parameters(),doc_lr)
 
