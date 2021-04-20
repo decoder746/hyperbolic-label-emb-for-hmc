@@ -58,9 +58,15 @@ class Synthetic(Dataset):
         print(self.per_label)
         logging.info(f"{self.per_label}")
         self.d_matrix = np.transpose(self.d_matrix)
-        self.d_matrix_norm = self.d_matrix / np.sum(self.d_matrix,axis=1)
-        self.c_matrix = self.d_matrix_norm@self.d_matrix_norm.T
-        print(self.c_matrix)
+        self.d_matrix_norm = self.d_matrix / np.sum(self.d_matrix,axis=1).reshape(-1,1)
+        self.c_matrix = self.d_matrix_norm@(self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1)).T
+        self.c_matrix_p = (self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1))@self.d_matrix_norm.T
+        self.delta_p = np.diagonal(self.c_matrix_p).reshape(1,-1)
+        self.delta = np.diagonal(self.c_matrix)
+        # print(self.c_matrix)
+        self.n_c = int(np.trace(self.c_matrix))
+        self.power = np.multiply(self.delta,(1-self.delta),np.sum(np.multiply(self.d_matrix,self.delta_p,1-self.delta_p),axis=1).reshape(-1,1))
+        print(self.n_c,self.power)
 
 
     def __len__(self):
