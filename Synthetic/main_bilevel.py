@@ -46,8 +46,10 @@ class Synthetic(Dataset):
         self.size = size
         self.drop_prob = drop_prob
         self.per_label = dict(zip(list(range(21)),[0]*21))
+        self.d_matrix = np.zeros((self.size,21),dtype=float)
         for i in range(self.size):
             x, y, y_old = self.getitem(i)
+            self.d_matrix[i,:] = y.numpy()
             for ele in y_old:
                 self.per_label[ele] += 1
             self.x.append(x)
@@ -55,6 +57,11 @@ class Synthetic(Dataset):
 
         print(self.per_label)
         logging.info(f"{self.per_label}")
+        self.d_matrix = np.transpose(self.d_matrix)
+        self.d_matrix_norm = self.d_matrix / np.sum(self.d_matrix,axis=1)
+        self.c_matrix = self.d_matrix_norm@self.d_matrix_norm.T
+        print(self.c_matrix)
+
 
     def __len__(self):
         return self.size
