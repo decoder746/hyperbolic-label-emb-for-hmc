@@ -57,16 +57,16 @@ class Synthetic(Dataset):
 
         print(self.per_label)
         logging.info(f"{self.per_label}")
-        self.d_matrix = np.transpose(self.d_matrix)
-        self.d_matrix_norm = self.d_matrix / np.sum(self.d_matrix,axis=1).reshape(-1,1)
-        self.c_matrix = self.d_matrix_norm@(self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1)).T
-        self.c_matrix_p = (self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1))@self.d_matrix_norm.T
-        self.delta_p = np.diagonal(self.c_matrix_p).reshape(1,-1)
-        self.delta = np.diagonal(self.c_matrix)
-        # print(self.c_matrix)
-        self.n_c = int(np.trace(self.c_matrix))
-        self.power = np.multiply(self.delta,(1-self.delta),np.sum(np.multiply(self.d_matrix,self.delta_p,1-self.delta_p),axis=1).reshape(-1,1))
-        print(self.n_c,self.power)
+        # self.d_matrix = np.transpose(self.d_matrix)
+        # self.d_matrix_norm = self.d_matrix / np.sum(self.d_matrix,axis=1).reshape(-1,1)
+        # self.c_matrix = self.d_matrix_norm@(self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1)).T
+        # self.c_matrix_p = (self.d_matrix/np.sum(self.d_matrix,axis=0).reshape(1,-1)).T@self.d_matrix_norm
+        # self.delta_p = np.diagonal(self.c_matrix_p).reshape(1,-1)
+        # self.delta = np.diagonal(self.c_matrix)
+        # # print(self.c_matrix)
+        # self.n_c = int(np.trace(self.c_matrix))
+        # self.power = np.multiply(self.delta,(1-self.delta),np.sum(np.multiply(self.d_matrix,self.delta_p,1-self.delta_p),axis=1).reshape(-1,1))
+        # print(self.n_c,self.power)
 
 
     def __len__(self):
@@ -391,6 +391,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         print(f"Epoch {t+1}/{epochs}")
         total_loss = 0
         combinedmodel.train()
+        fc = 0
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
@@ -404,7 +405,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             optimizer2 = torch.optim.Adam(params=combinedmodel2.parameters(),lr=args_model_init["lr"])
 
             combinedmodel2.register_parameter('wts', torch.nn.Parameter(weights, requires_grad=True))
-
+            combinedmodel2.register_parameter('fc',torch.nn.Parameter(fc, requires_grad=True))
             with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
                 doc_emb, label_emb, label_edges = fmodel(docs,Y,edges)
                 dot = doc_emb @ label_emb.T
