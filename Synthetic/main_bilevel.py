@@ -391,7 +391,6 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         print(f"Epoch {t+1}/{epochs}")
         total_loss = 0
         combinedmodel.train()
-        fc = 0
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
@@ -405,7 +404,6 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             optimizer2 = torch.optim.Adam(params=combinedmodel2.parameters(),lr=args_model_init["lr"])
 
             combinedmodel2.register_parameter('wts', torch.nn.Parameter(weights, requires_grad=True))
-            combinedmodel2.register_parameter('fc',torch.nn.Parameter(fc, requires_grad=True))
             with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
                 doc_emb, label_emb, label_edges = fmodel(docs,Y,edges)
                 dot = doc_emb @ label_emb.T
