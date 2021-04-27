@@ -419,15 +419,13 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     fopt.step(loss)
                 val_doc_emb, val_label_emb, val_label_edges = fmodel(val_docs, Y, val_edges)
                 val_dot = val_doc_emb @ val_label_emb.T
+                q = args_model_init["q"]
                 if args_model_init["joint"]:
                     val_losses, geo_loss = criterion(val_dot, val_labels, val_label_edges)
+                    temp = torch.pow((torch.sum(torch.pow(val_losses,q)) + torch.pow(geo_loss,q))/(val_losses.shape[0]+1), 1.0/q)
                 else:
                     val_losses = criterion(val_dot, val_labels, val_label_edges)
-                temp = torch.tensor([0.0]).cuda()
-                for d in range(args_model_init["n_labels"]):
-                    temp = torch.max(temp, val_losses[torch.where(Y==d)].sum())
-                if args_model_init["joint"]:
-                    temp = torch.max(temp, geo_loss)
+                    temp = torch.pow(torch.sum(torch.pow(val_losses,q))/val_losses.shape[0], 1.0/q)
                 wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0))[0]
             weights = weights - wt_lr * wt_grads
             weights = torch.clamp(weights, min=0)
@@ -492,6 +490,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset_size', default=20000, type=int)
     parser.add_argument('--change_prob', default=0.5,type=float)
     parser.add_argument('--scale',default=1,type=float)
+    parser.add_argument('--q', default = 1, type=float)
     args = parser.parse_args()
 
 
@@ -530,7 +529,8 @@ if __name__ == "__main__":
             "drop_p_doc" : 0.1,
             "drop_p_label" : 0.6,
             "flat" : args.flat,
-            "joint" : args.joint
+            "joint" : args.joint,
+            'q' : args.q
         }
     # Models
     combinedmodel = CombinedModel(args_model_init)
