@@ -185,10 +185,12 @@ class CombinedModel(nn.Module):
             for param in self.label_model.parameters():
                 param.require_grad = False
         self.W_11 = nn.Linear(args_model_init["emb_dim"], args_model_init["n_labels"])
-        self.W_12 = nn.Linear(args_model_init["emb_dim"], args_model_init["n_labels"])
+        self.W_12 = nn.Linear(args_model_init["emb_dim"], 1)
         self.W_13 = nn.Linear(args_model_init["n_labels"], args_model_init["n_labels"])
-        self.relu = nn.ReLU()
-
+        self.relu = nn.ReLU()   
+        # self.W_21 = nn.Linear(args_model_init["emb_dim"], args_model_init["emb_dim"])
+        # self.W_22 = nn.Linear(args_model_init["emb_dim"], 1)
+        # self.W_23 = nn.Linear(args_model_init["n_labels"], args_model_init["n_labels"])
 
     def forward(self, x, y, z):
         #method 1
@@ -199,6 +201,10 @@ class CombinedModel(nn.Module):
         y = self.relu(y)
         y = self.W_12(y)
         y = y.t()
+        #method 2
+        # x = self.W_21(self.relu(self.doc_model(x)))
+        # y = self.W_22(self.relu(self.label_model(y)))
+        
         return self.W_13(self.relu(x+y)), self.label_model(z)
 
 class LabelLoss(nn.Module):
@@ -441,7 +447,6 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             weights = torch.clamp(weights, min=0)
             optimizer.zero_grad()
             dot, label_edges = combinedmodel(docs, Y, edges)
-            dot = doc_emb @ label_emb.T
             if args_model_init["joint"]:
                 losses, geo_loss = criterion(dot, labels, label_edges)
                 loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
