@@ -223,7 +223,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             val_docs, val_labels, val_edges = val_docs.cuda(), val_labels.cuda(), val_edges.cuda()
 
             combinedmodel2 = CombinedModel(args_model_init)
-            combinedmodel2 = nn.DataParallel(combinedmodel2)
+            # combinedmodel2 = nn.DataParallel(combinedmodel2)
             combinedmodel2 = combinedmodel2.cuda()
             combinedmodel2.load_state_dict(copy.deepcopy(combinedmodel.state_dict()))
             optimizer2 = torch.optim.Adam(params=combinedmodel2.parameters(),lr=args_model_init["lr"])
@@ -431,7 +431,7 @@ if __name__ == "__main__":
         "joint" : args.joint
     }
     combinedmodel = CombinedModel(args_model_init)
-    combinedmodel = nn.DataParallel(combinedmodel)
+    # combinedmodel = nn.DataParallel(combinedmodel)
     combinedmodel = combinedmodel.cuda()
     optimizer = torch.optim.Adam(params=combinedmodel.parameters(),lr=args_model_init["lr"])
     train_bilevel(
