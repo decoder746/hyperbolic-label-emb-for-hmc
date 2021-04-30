@@ -268,21 +268,22 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         combinedmodel.eval()
         eval_bilevel(combinedmodel, trainloader, "Train", Y, weights, criterion, args_model_init["joint"])
         micro_val, macro_val, _ = eval_bilevel(combinedmodel, valloader, "Val", Y, weights, criterion, args_model_init["joint"])
-        micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y, weights, criterion, args_model_init["joint"])
-        test_f.append((micro_f, macro_f, t+1))
-        if macro_val > best_macro:
-            best_macro = macro_val
-            bests["macro"] = (micro_val, macro_val, t + 1)
-        if micro_val > best_micro:
-            best_micro = micro_val
-            bests["micro"] = (micro_val, macro_val, t + 1)
+        if t > 25:
+            micro_f, macro_f, per_label_macro_f = eval_bilevel(combinedmodel, testloader, "Test", Y, weights, criterion, args_model_init["joint"])
+            test_f.append((micro_f, macro_f, t+1))
+            if macro_val > best_macro:
+                best_macro = macro_val
+                bests["macro"] = (micro_val, macro_val, t + 1)
+            if micro_val > best_micro:
+                best_micro = micro_val
+                bests["micro"] = (micro_val, macro_val, t + 1)
+            with open("f1scores.txt",'a') as f:
+                string = "\n".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
+                str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
+                f.write(str_to_write)
         print(f"Total loss: {total_loss}")
         with open("weights.txt",'a') as f:
             string = ", ".join(list(map(lambda x: str(x.item()),weights)))
-            str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
-            f.write(str_to_write)
-        with open("f1scores.txt",'a') as f:
-            string = "\n".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
             str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
         # torch.save({
