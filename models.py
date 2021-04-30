@@ -42,23 +42,36 @@ class TextCNN(nn.Module):
         self.dropout = nn.Dropout(dropout_p)
         self.fc1 = nn.Linear(len(Ks) * Co, emb_dim)
 
-    def forward(self, x):
+    def forward(self, x, freeze=False):
         """
         Inputs:
             `x` is a list of tokenized documents as token ids
         Outputs:
             Embedding of `x`
         """
-        x = self.embed(x)  # (N, W, D)
-        x = x.unsqueeze(1)  # (N, Ci, W, D)
-        x = [
-            F.relu(conv(x)).squeeze(3) for conv in self.convs1
-        ]  # [(N, Co, W), ...]*len(Ks)
-        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]  # [(N, Co), ...]*len(Ks)
-        x = torch.cat(x, 1)
-        x = self.dropout(x)  # (N, len(Ks)*Co)
-        x = self.fc1(x)  # (N, C)
-        return x
+        if freeze:
+            with torch.no_grad():
+                x = self.embed(x)  # (N, W, D)
+                x = x.unsqueeze(1)  # (N, Ci, W, D)
+                x = [
+                    F.relu(conv(x)).squeeze(3) for conv in self.convs1
+                ]  # [(N, Co, W), ...]*len(Ks)
+                x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]  # [(N, Co), ...]*len(Ks)
+                x = torch.cat(x, 1)
+                x = self.dropout(x)  # (N, len(Ks)*Co)
+                x = self.fc1(x)  # (N, C)
+                return x
+        else:
+            x = self.embed(x)  # (N, W, D)
+            x = x.unsqueeze(1)  # (N, Ci, W, D)
+            x = [
+                F.relu(conv(x)).squeeze(3) for conv in self.convs1
+            ]  # [(N, Co, W), ...]*len(Ks)
+            x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]  # [(N, Co), ...]*len(Ks)
+            x = torch.cat(x, 1)
+            x = self.dropout(x)  # (N, len(Ks)*Co)
+            x = self.fc1(x)  # (N, C)
+            return x
 
 class LabelEmbedModel(nn.Module):
     def __init__(self, n_labels, emb_dim=104, dropout_p=0.4, eye=False):
@@ -97,9 +110,19 @@ class CombinedModel(nn.Module):
                 word_embed_dim=args_model_init["word_embed_dim"],
             )
         self.label_model = LabelEmbedModel(args_model_init["n_labels"], emb_dim=args_model_init["emb_dim"], dropout_p=args_model_init["drop_p_label"], eye=args_model_init["flat"])
-        if args_model_init["flat"]:
-            for param in self.label_model.parameters():
-                param.require_grad = False
+        for param in self.label_model.parameters():
+            param.require_grad = False
+        self.W_11 = nn.Linear(args_model_init["emb_dim"], args_model_init["n_labels"])
+        self.W_12 = nn.Linear(args_model_init["emb_dim"], 1)
+        self.W_13 = nn.Linear(args_model_init["n_labels"], args_model_init["n_labels"])
+        self.relu = nn.ReLU()  
 
-    def forward(self, x, y, z):
-        return self.doc_model(x), self.label_model(y), self.label_model(z)
+    def forward(self, x, y, z, freeze=False):
+        x = self.doc_model(x, freeze)
+        x = self.relu(x)
+        x = self.W_11(x)
+        y = self.label_model(y)
+        y = self.relu(y)
+        y = self.W_12(y)
+        y = y.t()
+        return self.W_13(self.relu(x+y)), self.label_model(z)

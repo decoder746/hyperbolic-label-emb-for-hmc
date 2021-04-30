@@ -137,8 +137,7 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion, joint):
         for i, data in tqdm(enumerate(dataloader, 0)):
             docs, labels, edges = data
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
-            doc_emb, label_emb, label_edges = combinedmodel(docs, Y, edges)
-            dot = doc_emb @ label_emb.T
+            dot, label_edges = combinedmodel(docs, Y, edges)
             if joint:
                 losses, geo_loss = criterion(dot, labels, label_edges)
                 loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
@@ -231,8 +230,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             combinedmodel2.register_parameter('wts', torch.nn.Parameter(weights, requires_grad=True))
 
             with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
-                doc_emb, label_emb, label_edges = fmodel(docs,Y,edges)
-                dot = doc_emb @ label_emb.T
+                dot, label_edges = fmodel(docs,Y,edges, freeze=True)
                 if args_model_init["joint"]:
                     losses, geo_loss = criterion(dot, labels, label_edges)
                     loss = torch.dot(losses, fmodel.wts[:-1]) + fmodel.wts[-1]*geo_loss
@@ -241,13 +239,13 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     losses = criterion(dot, labels, label_edges)
                     loss = torch.dot(losses, fmodel.wts)
                     fopt.step(loss)
-                val_doc_emb, val_label_emb, val_label_edges = fmodel(val_docs, Y, val_edges)
-                val_dot = val_doc_emb @ val_label_emb.T
+                val_dot, val_label_edges = fmodel(val_docs, Y, val_edges, freeze=True)
                 if args_model_init["joint"]:
                     val_losses, geo_loss = criterion(val_dot, val_labels, val_label_edges)
                 else:
                     val_losses = criterion(val_dot, val_labels, val_label_edges)
                 temp = torch.tensor([0.0]).cuda()
+                print(val_labels, val_labels.shape)
                 for d in range(args_model_init["n_labels"]):
                     temp = torch.max(temp, val_losses[torch.where(Y==d)].sum())
                 if args_model_init["joint"]:
