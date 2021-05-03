@@ -250,9 +250,11 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     temp = torch.max(temp, val_exp[(val_labels[:,d]==1)][:,d].mean())
                 if args_model_init["joint"]:
                     temp = torch.max(temp, geo_loss)
-                wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0) ,allow_unused=True)[0]
+                with torch.no_grad():
+                    wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0) ,allow_unused=True)[0]
             weights = weights - wt_lr * wt_grads
             weights = torch.clamp(weights, min=0)
+            del wt_grads
             optimizer.zero_grad()
             dot, label_edges = combinedmodel(docs, Y, edges)
             if args_model_init["joint"]:
