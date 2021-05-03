@@ -231,7 +231,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             combinedmodel2.register_parameter('wts', torch.nn.Parameter(weights, requires_grad=True))
 
             with higher.innerloop_ctx(combinedmodel2, optimizer2) as (fmodel, fopt):
-                dot, label_edges = fmodel(docs,Y,edges, freeze=True)
+                dot, label_edges = fmodel(docs,Y,edges)
                 if args_model_init["joint"]:
                     losses, geo_loss, _ = criterion(dot, labels, label_edges)
                     loss = torch.dot(losses, fmodel.wts[:-1]) + fmodel.wts[-1]*geo_loss
@@ -240,7 +240,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     losses, _ = criterion(dot, labels, label_edges)
                     loss = torch.dot(losses, fmodel.wts)
                     fopt.step(loss)
-                val_dot, val_label_edges = fmodel(val_docs, Y, val_edges, freeze=True)
+                val_dot, val_label_edges = fmodel(val_docs, Y, val_edges)
                 if args_model_init["joint"]:
                     val_losses, geo_loss, val_exp = criterion(val_dot, val_labels, val_label_edges)
                 else:
