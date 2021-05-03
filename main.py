@@ -266,6 +266,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
+            torch.cuda.empty_cache()
         # logging.info(f"Total training loss: {total_loss}")
         combinedmodel.eval()
         eval_bilevel(combinedmodel, trainloader, "Train", Y, weights, criterion, args_model_init["joint"])
