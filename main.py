@@ -246,8 +246,14 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                 else:
                     val_losses, val_exp = criterion(val_dot, val_labels, val_label_edges)
                 temp = torch.tensor([0.0]).cuda()
+                print_values = []
                 for d in range(args_model_init["n_labels"]):
-                    rem = val_exp[(val_labels[:,d]==1)][:,d].mean()
+                    mask = val_labels[:,d]==1
+                    if mask.sum() == 0 :
+                        print_values.append(0)
+                        continue 
+                    rem = val_exp[mask][:,d].mean()
+                    print_values.append(rem.item())
                     if temp.item() < rem.item():
                         index = d
                     temp = torch.max(temp, rem)
@@ -259,7 +265,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     string = str(t) + ","+str(i)+","+ str(index) +","+ str(temp.item())+"," +"\n" 
                     f.write(string)
                 with open("val_losses.txt",'a') as f:
-                    string = str(t) + "," + str(i) + "," + ",".join(list(map(lambda x: str(x.item()),per_label_macro_f))) + "\n"
+                    string = str(t) + "," + str(i) + "," + ",".join(list(map(str, print_values))) + "\n"
                     f.write(string)
                 wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0), allow_unused=True)[0]
             weights = weights - wt_lr * wt_grads
