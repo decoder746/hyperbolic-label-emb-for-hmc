@@ -247,11 +247,21 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     val_losses, val_exp = criterion(val_dot, val_labels, val_label_edges)
                 temp = torch.tensor([0.0]).cuda()
                 for d in range(args_model_init["n_labels"]):
-                    temp = torch.max(temp, val_exp[(val_labels[:,d]==1)][:,d].mean())
+                    rem = val_exp[(val_labels[:,d]==1)][:,d].mean()
+                    if temp.item() < rem.item():
+                        index = d
+                    temp = torch.max(temp, rem)
                 if args_model_init["joint"]:
+                    if temp.item() < geo_loss.item():
+                        index = args_model_init['n_labels']
                     temp = torch.max(temp, geo_loss)
-                with torch.no_grad():
-                    wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0), allow_unused=True)[0]
+                with open('val_index.txt' , 'a') as f:
+                    string = str(t) + ","+str(i)+","+ str(index) +","+ str(temp.item())+"," +"\n" 
+                    f.write(string)
+                with open("val_losses.txt",'a') as f:
+                    string = str(t) + "," + str(i) + "," + ",".join(list(map(lambda x: str(x.item()),per_label_macro_f))) + "\n"
+                    f.write(string)
+                wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0), allow_unused=True)[0]
             weights = weights - wt_lr * wt_grads
             weights = torch.clamp(weights, min=0)
             del wt_grads
@@ -339,7 +349,7 @@ if __name__ == "__main__":
         )
     else:
         trainloader = DataLoader(
-            trainset, batch_size=128, shuffle=True, num_workers=4, pin_memory=True
+            trainset, batch_size=512, shuffle=True, num_workers=4, pin_memory=True
         )
 
     valloader = DataLoader(
