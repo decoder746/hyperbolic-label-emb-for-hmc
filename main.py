@@ -235,6 +235,8 @@ def train(
     logging.info(best_test)
 
 def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, criterion, save_folder, wt_lr):
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
     best_macro = 0.0
     best_micro = 0.0
     bests = {"micro": (0, 0, 0), "macro": (0, 0, 0)}  # micro, macro, epoch
@@ -300,10 +302,12 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     if temp.item() < geo_loss.item():
                         index = args_model_init['n_labels']
                     temp = torch.max(temp, geo_loss)
-                with open('val_index.txt' , 'a') as f:
+                val_i_file = os.path.join(save_folder,'val_index.txt')
+                with open(val_i_file , 'a') as f:
                     string = str(t) + ","+str(i)+","+ str(index) +","+ str(temp.item())+"," +"\n" 
                     f.write(string)
-                with open("val_losses.txt",'a') as f:
+                val_l_file = os.path.join(save_folder,'val_losses.txt')
+                with open(val_l_file,'a') as f:
                     # string = str(t) + "," + str(i) + "," + ",".join(list(map(str, print_values))) + "\n"
                     string = str(t) + "," + str(i) + "," + ",".join(list(map(str, list(val_losses.detach().cpu().numpy())))) + "\n"
                     f.write(string)
@@ -313,12 +317,13 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             del wt_grads
             optimizer.zero_grad()
             dot, label_edges = combinedmodel(docs, Y, edges)
+            labels_pop = labels/(1.0*labels.sum(axis=0))
             if args_model_init["joint"]:
                 losses, geo_loss, _ = criterion(dot, labels, label_edges)
-                loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
+                loss = torch.dot(losses*labels_pop, weights[:-1]) + weights[-1]*geo_loss
             else:
                 losses, _ = criterion(dot, labels, label_edges)
-                loss = torch.dot(losses, weights)
+                loss = torch.dot(losses*labels_pop, weights)
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
@@ -336,12 +341,14 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             if micro_val > best_micro:
                 best_micro = micro_val
                 bests["micro"] = (micro_val, macro_val, t + 1)
-            with open("f1scores.txt",'a') as f:
-                string = "\n".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
+            f1_file = os.path.join(save_folder,"f1scores.txt")
+            with open(f1_file,'a') as f:
+                string = ",".join(list(map(lambda x: str(x.item()),per_label_macro_f)))
                 str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
                 f.write(str_to_write)
         print(f"Total loss: {total_loss}")
-        with open("weights.txt",'a') as f:
+        weight_file = os.path.join(save_folder,"weights.txt")
+        with open(weight_file,'a') as f:
             string = ", ".join(list(map(lambda x: str(x.item()),weights)))
             str_to_write = f"Epoch {t+1}/{epochs} \n" + string + "\n"
             f.write(str_to_write)
@@ -387,7 +394,7 @@ if __name__ == "__main__":
 
     # Split into train and val sets
     trainset, valset = torch.utils.data.dataset.random_split(trainvalset, 
-                [int(0.9*len(trainvalset)), len(trainvalset)- int(0.9*len(trainvalset))])
+                [int(0.7*len(trainvalset)), len(trainvalset)- int(0.7*len(trainvalset))])
 
     if args.dataset=='yelp':
         trainloader = DataLoader(
