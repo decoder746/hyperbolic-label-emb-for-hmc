@@ -317,7 +317,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             del wt_grads
             optimizer.zero_grad()
             dot, label_edges = combinedmodel(docs, Y, edges)
-            labels_pop = labels/(1.0*labels.sum(axis=0))
+            labels_pop = labels.sum(axis=0)/(1.0*labels.sum())
             if args_model_init["joint"]:
                 losses, geo_loss, _ = criterion(dot, labels, label_edges)
                 loss = torch.dot(losses*labels_pop, weights[:-1]) + weights[-1]*geo_loss
