@@ -57,11 +57,12 @@ class Loss(nn.Module):
         return loss
 
 class BiLevelLoss(nn.Module):
-    def __init__(self, use_geodesic=False, only_label=False):
+    def __init__(self, rho=1, use_geodesic=False, only_label=False):
         super(BiLevelLoss, self).__init__()
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
         self.use_geodesic = use_geodesic
         self.scale_factor = 100
+        self.rho = rho
         if use_geodesic or only_label:
             self.geo_loss = LabelLoss()
         self.only_label = only_label
@@ -71,6 +72,7 @@ class BiLevelLoss(nn.Module):
             return self.geo_loss(label_embs)
         expanded_loss = self.bce(outputs, targets)
         loss = torch.mean(expanded_loss,0)
+        loss = torch.pow(loss, self.rho)
         # if loss < 0:
         #     logging.error(outputs, targets)
         #     raise AssertionError
@@ -377,6 +379,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', default='rcv1', choices=['rcv1', 'nyt', 'yelp'])
     parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--geodesic_lambda', default=0.1, type=float)
+    parser.add_argument('--rho',default = 1,type=float)
     args = parser.parse_args()
 
     os.makedirs(args.exp_name, exist_ok=True)
@@ -458,7 +461,7 @@ if __name__ == "__main__":
     # )
 
     criterion = BiLevelLoss(
-        use_geodesic=args.joint, only_label=args.cascaded_step1
+        rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step
     )
     # optimizer = torch.optim.Adam([
     #     {'params': doc_model.parameters(), 'lr': doc_lr},
@@ -480,7 +483,8 @@ if __name__ == "__main__":
         "word_embed_dim" : word_embed_dim,
         "drop_p_label" : 0.6,
         "flat" : args.flat,
-        "joint" : args.joint
+        "joint" : args.joint,
+        "rho" : args.rho
     }
     combinedmodel = CombinedModel(args_model_init)
     # combinedmodel = nn.DataParallel(combinedmodel)
@@ -508,6 +512,6 @@ if __name__ == "__main__":
         Y,
         optimizer,
         criterion,
-        save_folder='checkpoints',
+        save_folder='checkpoints_rho_'+str(args.rho),
         wt_lr= 0.1
     )
