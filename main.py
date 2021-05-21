@@ -397,7 +397,7 @@ if __name__ == "__main__":
 
     # Split into train and val sets
     trainset, valset = torch.utils.data.dataset.random_split(trainvalset, 
-                [int(0.7*len(trainvalset)), len(trainvalset)- int(0.7*len(trainvalset))])
+                [int(0.9*len(trainvalset)), len(trainvalset)- int(0.9*len(trainvalset))])
 
     if args.dataset=='yelp':
         trainloader = DataLoader(
@@ -461,7 +461,7 @@ if __name__ == "__main__":
     # )
 
     criterion = BiLevelLoss(
-        rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step
+        rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step1
     )
     # optimizer = torch.optim.Adam([
     #     {'params': doc_model.parameters(), 'lr': doc_lr},
