@@ -72,7 +72,7 @@ class BiLevelLoss(nn.Module):
             return self.geo_loss(label_embs)
         expanded_loss = self.bce(outputs, targets)
         loss = torch.mean(expanded_loss,0)
-        loss = torch.pow(loss, self.rho)
+        # loss = torch.pow(loss, self.rho)
         # if loss < 0:
         #     logging.error(outputs, targets)
         #     raise AssertionError
