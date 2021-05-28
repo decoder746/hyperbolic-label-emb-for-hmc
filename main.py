@@ -13,6 +13,20 @@ from datasets import TextLabelDataset
 from models import LabelEmbedModel, TextCNN, CombinedModel
 from poincare_utils import PoincareDistance
 
+class FocalLoss(nn.Module):
+    def __init__(self, gamma):
+        super().__init__()
+        self.gamma = gamma
+        self.loss = nn.BCEWithLogitsLoss(reduction='none')
+
+    def forward(self, inputs, targets, label_embs):
+        expanded_loss = self.loss(inputs, targets)
+        _loss = torch.mean(expanded_loss,0)
+        pt = torch.exp(-_loss)
+        lam = ((1-pt)**self.gamma).detach()
+        F_loss = lam* _loss
+        return F_loss, expanded_loss
+
 class LabelLoss(nn.Module):
     def __init__(self, dist=PoincareDistance):
         super(LabelLoss, self).__init__()
@@ -319,14 +333,14 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             del wt_grads
             optimizer.zero_grad()
             dot, label_edges = combinedmodel(docs, Y, edges)
-            labels_pop = labels.sum(axis=0)/(1.0*labels.sum())
+            # labels_pop = labels.sum(axis=0)/(1.0*labels.sum())
             if args_model_init["joint"]:
                 losses, geo_loss, _ = criterion(dot, labels, label_edges)
                 loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
             else:
                 losses, _ = criterion(dot, labels, label_edges)
-                multiplicand = 1 + combinedmodel.C*torch.exp(-combinedmodel.A*torch.log(combinedmodel.B + labels_pop))
-                losses = multiplicand*losses
+                # multiplicand = 1 + combinedmodel.C*torch.exp(-combinedmodel.A*torch.log(combinedmodel.B + labels_pop))
+                # losses = multiplicand*losses
                 loss = torch.dot(losses, weights)
             total_loss += loss.item()
             loss.backward()
@@ -382,6 +396,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_epochs', default=30, type=int)
     parser.add_argument('--geodesic_lambda', default=0.1, type=float)
     parser.add_argument('--rho',default = 1,type=float)
+    parser.add_argument('--gamma', default=0, type=float)
     args = parser.parse_args()
 
     os.makedirs(args.exp_name, exist_ok=True)
@@ -462,9 +477,10 @@ if __name__ == "__main__":
     #     use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
     # )
 
-    criterion = BiLevelLoss(
-        rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step1
-    )
+    # criterion = BiLevelLoss(
+    #     rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step1
+    # )
+    criterion = FocalLoss(gamma=args.gamma)
     # optimizer = torch.optim.Adam([
     #     {'params': doc_model.parameters(), 'lr': doc_lr},
     #     {'params': label_model.parameters(), 'lr': 0.001}

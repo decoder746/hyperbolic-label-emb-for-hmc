@@ -116,9 +116,9 @@ class CombinedModel(nn.Module):
         self.W_12 = nn.Linear(args_model_init["emb_dim"], 1)
         self.W_13 = nn.Linear(args_model_init["n_labels"], args_model_init["n_labels"])
         self.relu = nn.ReLU()  
-        self.A = torch.nn.Parameter(torch.random(1))
-        self.B = torch.nn.Parameter(torch.random(1))
-        self.C = torch.nn.Parameter(torch.random(1))
+        # self.A = torch.nn.Parameter(torch.random(1))
+        # self.B = torch.nn.Parameter(torch.random(1))
+        # self.C = torch.nn.Parameter(torch.random(1))
 
 
     def forward(self, x, y, z, freeze=False):
