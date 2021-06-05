@@ -251,6 +251,10 @@ def train(
     logging.info(best_test)
 
 def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, args_model_init, Y, optimizer, criterion, save_folder, wt_lr):
+    freq = [10785, 673, 381, 947, 160, 4179, 49, 1172, 1462, 793, 189, 62, 922, 1058, 43, 443, 120, 312, 343, 2366, 1930, 399, 437, 285, 76, 246, 1205, 142, 202, 166, 196, 41, 31, 286, 0, 3448, 6970, 5881, 278, 679, 187, 65, 1255, 66, 449, 641, 15, 166, 94, 167, 17, 12, 8, 34, 407, 853, 43, 0, 3, 40, 102, 400, 54, 363, 1133, 233, 1004, 293, 106, 172, 6, 197, 471, 0, 13, 90, 1647, 166, 92, 37, 913, 23, 1115, 346, 135, 51, 49, 35, 59, 138, 38, 2, 45, 52, 2, 1293, 731, 1596, 2541, 943, 699, 1508, 311, 606]
+    freq_t = torch.FloatTensor(freq)
+    freq_t = freq_t/ freq_t.sum()
+    freq_t = torch.pow(freq_t, args_model_init["rho"])
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     best_macro = 0.0
@@ -287,45 +291,54 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     loss = torch.dot(losses, fmodel.wts[:-1]) + fmodel.wts[-1]*geo_loss
                     fopt.step(loss)
                 else:
-                    losses, _ = criterion(dot, labels, label_edges)
-                    loss = torch.dot(losses, fmodel.wts)
+                    losses, exp = criterion(dot, labels, label_edges)
+                    temp = torch.zeros(args_model_init["n_labels"])
+                    for d in range(args_model_init["n_labels"]):
+                        mask = labels[:,d]==1
+                        if mask.sum().item() == 0 :
+                            temp[d] = 0
+                            continue 
+                        rem = exp[mask][:,d].mean()
+                        temp[d] = rem
+                    new_loss = temp*freq_t
+                    loss = torch.dot(new_loss, fmodel.wts)
                     fopt.step(loss)
                 val_dot, val_label_edges = fmodel(val_docs, Y, val_edges, freeze=True)
                 if args_model_init["joint"]:
                     val_losses, geo_loss, val_exp = criterion(val_dot, val_labels, val_label_edges)
                 else:
                     val_losses, val_exp = criterion(val_dot, val_labels, val_label_edges)
-                # temp = torch.tensor([0.0]).cuda()
-                # print_values = []
-                # for d in range(args_model_init["n_labels"]):
-                #     mask = val_labels[:,d]==1
-                #     if mask.sum().item() == 0 :
-                #         print_values.append(0)
-                #         continue 
-                #     rem = val_exp[mask][:,d].mean()
-                #     print_values.append(rem.item())
-                #     if temp.item() < rem.item():
-                #         index = d
-                #     temp = torch.max(temp, rem)
-                temp = torch.max(val_losses)
-                index = torch.argmax(val_losses).item()
-                if args_model_init["joint"]:
-                    if temp.item() < geo_loss.item():
-                        index = args_model_init['n_labels']
-                    temp = torch.max(temp, geo_loss)
-                    # print(temp.item())
-                if args_model_init["joint"]:
-                    if temp.item() < geo_loss.item():
-                        index = args_model_init['n_labels']
-                    temp = torch.max(temp, geo_loss)
+                temp = torch.tensor([0.0]).cuda()
+                print_values = []
+                for d in range(args_model_init["n_labels"]):
+                    mask = val_labels[:,d]==1
+                    if mask.sum().item() == 0 :
+                        print_values.append(0)
+                        continue 
+                    rem = val_exp[mask][:,d].mean()
+                    print_values.append(rem.item())
+                    if temp.item() < rem.item():
+                        index = d
+                    temp = torch.max(temp, rem)
+                # temp = torch.max(val_losses)
+                # index = torch.argmax(val_losses).item()
+                # if args_model_init["joint"]:
+                #     if temp.item() < geo_loss.item():
+                #         index = args_model_init['n_labels']
+                #     temp = torch.max(temp, geo_loss)
+                #     # print(temp.item())
+                # if args_model_init["joint"]:
+                #     if temp.item() < geo_loss.item():
+                #         index = args_model_init['n_labels']
+                #     temp = torch.max(temp, geo_loss)
                 val_i_file = os.path.join(save_folder,'val_index.txt')
                 with open(val_i_file , 'a') as f:
                     string = str(t) + ","+str(i)+","+ str(index) +","+ str(temp.item())+"," +"\n" 
                     f.write(string)
                 val_l_file = os.path.join(save_folder,'val_losses.txt')
                 with open(val_l_file,'a') as f:
-                    # string = str(t) + "," + str(i) + "," + ",".join(list(map(str, print_values))) + "\n"
-                    string = str(t) + "," + str(i) + "," + ",".join(list(map(str, list(val_losses.detach().cpu().numpy())))) + "\n"
+                    string = str(t) + "," + str(i) + "," + ",".join(list(map(str, print_values))) + "\n"
+                    # string = str(t) + "," + str(i) + "," + ",".join(list(map(str, list(val_losses.detach().cpu().numpy())))) + "\n"
                     f.write(string)
                 wt_grads = torch.autograd.grad(temp, fmodel.parameters(time=0), allow_unused=True)[0]
             weights = weights - wt_lr * wt_grads
@@ -338,10 +351,19 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                 losses, geo_loss, _ = criterion(dot, labels, label_edges)
                 loss = torch.dot(losses, weights[:-1]) + weights[-1]*geo_loss
             else:
-                losses, _ = criterion(dot, labels, label_edges)
+                losses, exp = criterion(dot, labels, label_edges)
                 # multiplicand = 1 + combinedmodel.C*torch.exp(-combinedmodel.A*torch.log(combinedmodel.B + labels_pop))
                 # losses = multiplicand*losses
-                loss = torch.dot(losses, weights)
+                temp = torch.zeros(args_model_init["n_labels"])
+                for d in range(args_model_init["n_labels"]):
+                    mask = labels[:,d]==1
+                    if mask.sum().item() == 0 :
+                        temp[d] = 0
+                        continue 
+                    rem = exp[mask][:,d].mean()
+                    temp[d] = rem
+                new_loss = temp*freq_t
+                loss = torch.dot(new_loss, weights)
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
@@ -530,6 +552,6 @@ if __name__ == "__main__":
         Y,
         optimizer,
         criterion,
-        save_folder='checkpoints_rho_'+str(args.rho),
+        save_folder='checkpoints_pop_rho_'+str(args.rho),
         wt_lr= 0.1
     )
