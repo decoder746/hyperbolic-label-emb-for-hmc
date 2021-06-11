@@ -433,7 +433,7 @@ if __name__ == "__main__":
         trainvalset = pickle.load(open(f"{args.dataset}/train.pkl", "rb"))
     except:
         # json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5
-        trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 1, 5)
+        trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 256, 5)
         pickle.dump(trainvalset, open(f"{args.dataset}/train.pkl", "wb"))
 
     # Split into train and val sets
@@ -442,15 +442,15 @@ if __name__ == "__main__":
 
     if args.dataset=='yelp':
         trainloader = DataLoader(
-            trainset, batch_size=512, shuffle=True, num_workers=4, pin_memory=True
+            trainset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True
         )
     else:
         trainloader = DataLoader(
-            trainset, batch_size=512, shuffle=True, num_workers=4, pin_memory=True
+            trainset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True
         )
 
     valloader = DataLoader(
-        valset, batch_size=512, shuffle=False, num_workers=4, pin_memory=True)
+        valset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
 
     try:
         testset = pickle.load(open(f"{args.dataset}/test.pkl", "rb"))
