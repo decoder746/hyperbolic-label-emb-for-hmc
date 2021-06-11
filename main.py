@@ -433,7 +433,7 @@ if __name__ == "__main__":
         trainvalset = pickle.load(open(f"{args.dataset}/train.pkl", "rb"))
     except:
         # json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5
-        trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 256, 5)
+        trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 1, 5)
         pickle.dump(trainvalset, open(f"{args.dataset}/train.pkl", "wb"))
 
     # Split into train and val sets
