@@ -499,10 +499,10 @@ if __name__ == "__main__":
     #     use_geodesic=args.joint, _lambda=args.geodesic_lambda, only_label=args.cascaded_step1
     # )
 
-    # criterion = BiLevelLoss(
-    #     rho = args.rho, use_geodesic=args.joint, only_label=args.cascaded_step1
-    # )
-    criterion = FocalLoss(gamma=args.gamma)
+    criterion = BiLevelLoss(
+        rho = 1, use_geodesic=args.joint, only_label=args.cascaded_step1
+    )
+    # criterion = FocalLoss(gamma=args.gamma)
     # optimizer = torch.optim.Adam([
     #     {'params': doc_model.parameters(), 'lr': doc_lr},
     #     {'params': label_model.parameters(), 'lr': 0.001}
