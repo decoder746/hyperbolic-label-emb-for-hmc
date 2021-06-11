@@ -235,7 +235,7 @@ class TextDatasetBatch(Dataset):
         return self.new_x[idxs], self.labels_tensor[idxs]
 class TextLabelDatasetBatch(Dataset):
     def __init__(self, json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5, hier_file=None):
-        super(TextLabelDataset, self).__init__()
+        super(TextLabelDatasetBatch, self).__init__()
 
         labels = Labels(label_file)
         self.labels = labels
