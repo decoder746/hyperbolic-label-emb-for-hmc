@@ -227,7 +227,7 @@ class TextDatasetBatch(Dataset):
                 continue
             if int(left_labels[label]) <= 0:
                 continue
-            idx = choices(torch.where(self.labels_tensor[:,label]==1)[0].tolist(), int(left_labels[label]))
+            idx = choices(torch.where(self.labels_tensor[:,label]==1)[0].tolist(), k = int(left_labels[label]))
             left_labels -= self.labels_tensor[idx].sum(axis=0)
             idxs.extend(idx)
         print(idxs)
