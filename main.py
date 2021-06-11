@@ -254,7 +254,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
     freq = [10785, 673, 381, 947, 160, 4179, 49, 1172, 1462, 793, 189, 62, 922, 1058, 43, 443, 120, 312, 343, 2366, 1930, 399, 437, 285, 76, 246, 1205, 142, 202, 166, 196, 41, 31, 286, 0, 3448, 6970, 5881, 278, 679, 187, 65, 1255, 66, 449, 641, 15, 166, 94, 167, 17, 12, 8, 34, 407, 853, 43, 0, 3, 40, 102, 400, 54, 363, 1133, 233, 1004, 293, 106, 172, 6, 197, 471, 0, 13, 90, 1647, 166, 92, 37, 913, 23, 1115, 346, 135, 51, 49, 35, 59, 138, 38, 2, 45, 52, 2, 1293, 731, 1596, 2541, 943, 699, 1508, 311, 606]
     freq_t = torch.FloatTensor(freq)
     freq_t = freq_t/ freq_t.sum()
-    freq_t = torch.pow(freq_t, args_model_init["rho"])
+    freq_t = torch.pow(freq_t, args_model_init["rho"]).cuda()
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     best_macro = 0.0
@@ -272,6 +272,8 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         combinedmodel.train()
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
+            print(docs.shape, labels.shape)
+            print(labels.sum(axis=0))
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             val_docs, val_labels, val_edges = next(iter(valloader))
             val_docs, val_labels, val_edges = val_docs.cuda(), val_labels.cuda(), val_edges.cuda()
@@ -292,7 +294,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                     fopt.step(loss)
                 else:
                     losses, exp = criterion(dot, labels, label_edges)
-                    temp = torch.zeros(args_model_init["n_labels"])
+                    temp = torch.zeros(args_model_init["n_labels"]).cuda()
                     for d in range(args_model_init["n_labels"]):
                         mask = labels[:,d]==1
                         if mask.sum().item() == 0 :
@@ -354,7 +356,7 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
                 losses, exp = criterion(dot, labels, label_edges)
                 # multiplicand = 1 + combinedmodel.C*torch.exp(-combinedmodel.A*torch.log(combinedmodel.B + labels_pop))
                 # losses = multiplicand*losses
-                temp = torch.zeros(args_model_init["n_labels"])
+                temp = torch.zeros(args_model_init["n_labels"]).cuda()
                 for d in range(args_model_init["n_labels"]):
                     mask = labels[:,d]==1
                     if mask.sum().item() == 0 :
