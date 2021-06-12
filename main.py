@@ -185,6 +185,9 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion, joint):
             docs, labels, edges = data
             docs = torch.squeeze(docs)
             labels = torch.squeeze(labels)
+            batch_Size = min(docs.shape[0], labels.shape[0])
+            docs = docs[:batch_Size]
+            labels = labels[:batch_Size]
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             dot, label_edges = combinedmodel(docs, Y, edges)
             if joint:
@@ -276,12 +279,18 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             docs, labels, edges = data
             docs = torch.squeeze(docs)
             labels = torch.squeeze(labels)
+            batch_Size = min(docs.shape[0], labels.shape[0])
+            docs = docs[:batch_Size]
+            labels = labels[:batch_Size]
             print(docs.shape, labels.shape)
             print(labels.sum(axis=0))
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             val_docs, val_labels, val_edges = next(iter(valloader))
             val_docs = torch.squeeze(val_docs)
             val_labels = torch.squeeze(val_labels)
+            batch_Size = min(val_docs.shape[0], val_labels.shape[0])
+            val_docs = val_docs[:batch_Size]
+            val_labels = val_labels[:batch_Size]
             val_docs, val_labels, val_edges = val_docs.cuda(), val_labels.cuda(), val_edges.cuda()
 
             combinedmodel2 = CombinedModel(args_model_init)
