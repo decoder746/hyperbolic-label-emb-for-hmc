@@ -232,6 +232,8 @@ class TextDatasetBatch(Dataset):
             idxs.extend(idx)
         # print(idxs)
         # print(self.labels_tensor[idxs])
+        assert self.new_x[idxs].shape[0] == len(idxs)
+        assert self.labels_tensor[idxs].shape[0] == len(idxs)
         assert self.new_x.shape[0] == self.labels_tensor.shape[0]
         return self.new_x[idxs].long(), self.labels_tensor[idxs]
 class TextLabelDatasetBatch(Dataset):
