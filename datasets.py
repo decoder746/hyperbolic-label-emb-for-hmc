@@ -211,7 +211,7 @@ class TextDatasetBatch(Dataset):
         self.len = len(self.x)
         self.labels_tensor = torch.Tensor(list(map(lambda x: x.tolist(), self.y)))
         self.freq = [10785, 673, 381, 947, 160, 4179, 49, 1172, 1462, 793, 189, 62, 922, 1058, 43, 443, 120, 312, 343, 2366, 1930, 399, 437, 285, 76, 246, 1205, 142, 202, 166, 196, 41, 31, 286, 0, 3448, 6970, 5881, 278, 679, 187, 65, 1255, 66, 449, 641, 15, 166, 94, 167, 17, 12, 8, 34, 407, 853, 43, 0, 3, 40, 102, 400, 54, 363, 1133, 233, 1004, 293, 106, 172, 6, 197, 471, 0, 13, 90, 1647, 166, 92, 37, 913, 23, 1115, 346, 135, 51, 49, 35, 59, 138, 38, 2, 45, 52, 2, 1293, 731, 1596, 2541, 943, 699, 1508, 311, 606]
-        self.asc_labels = list(np.argsort(-np.array(self.freq)))
+        self.asc_labels = list(np.argsort(np.array(self.freq)))
         self.new_x = torch.Tensor(self.x)
 
     def __len__(self):
