@@ -230,8 +230,8 @@ class TextDatasetBatch(Dataset):
             idx = choices(torch.where(self.labels_tensor[:,label]==1)[0].tolist(), k = int(left_labels[label]))
             left_labels -= self.labels_tensor[idx].sum(axis=0)
             idxs.extend(idx)
-        print(idxs)
-        print(self.labels_tensor[idxs])
+        # print(idxs)
+        # print(self.labels_tensor[idxs])
         return self.new_x[idxs], self.labels_tensor[idxs]
 class TextLabelDatasetBatch(Dataset):
     def __init__(self, json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5, hier_file=None):
