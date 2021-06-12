@@ -220,7 +220,7 @@ class TextDatasetBatch(Dataset):
     def __getitem__(self, idx):
         if idx >= self.len:
             raise StopIteration
-        left_labels = 32*torch.ones(104)
+        left_labels = 8*torch.ones(104)
         idxs = []
         for label in self.asc_labels:
             if self.freq[label] == 0:
@@ -232,7 +232,8 @@ class TextDatasetBatch(Dataset):
             idxs.extend(idx)
         # print(idxs)
         # print(self.labels_tensor[idxs])
-        return self.new_x[idxs], self.labels_tensor[idxs]
+        assert self.new_x.shape[0] == self.labels_tensor.shape[0]
+        return self.new_x[idxs].long(), self.labels_tensor[idxs]
 class TextLabelDatasetBatch(Dataset):
     def __init__(self, json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5, hier_file=None):
         super(TextLabelDatasetBatch, self).__init__()

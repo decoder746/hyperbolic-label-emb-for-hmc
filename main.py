@@ -272,6 +272,8 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
         combinedmodel.train()
         for i,data in tqdm(enumerate(trainloader,0)):
             docs, labels, edges = data
+            docs = torch.squeeze(docs)
+            labels = torch.squeeze(labels)
             print(docs.shape, labels.shape)
             print(labels.sum(axis=0))
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
