@@ -183,6 +183,8 @@ def eval_bilevel(combinedmodel, dataloader, mode, Y, weights, criterion, joint):
     with torch.no_grad():
         for i, data in tqdm(enumerate(dataloader, 0)):
             docs, labels, edges = data
+            docs = torch.squeeze(docs)
+            labels = torch.squeeze(labels)
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             dot, label_edges = combinedmodel(docs, Y, edges)
             if joint:
@@ -278,6 +280,8 @@ def train_bilevel(epochs, trainloader, valloader, testloader, combinedmodel, arg
             print(labels.sum(axis=0))
             docs, labels, edges = docs.cuda(), labels.cuda(), edges.cuda()
             val_docs, val_labels, val_edges = next(iter(valloader))
+            val_docs = torch.squeeze(val_docs)
+            val_labels = torch.squeeze(val_labels)
             val_docs, val_labels, val_edges = val_docs.cuda(), val_labels.cuda(), val_edges.cuda()
 
             combinedmodel2 = CombinedModel(args_model_init)
