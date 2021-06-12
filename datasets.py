@@ -274,10 +274,10 @@ class TextLabelDatasetBatch(Dataset):
         self.label_dataset = LabelDataset(N)
 
         self.n_labels = n_labels        
-        self.len = max(len(self.text_dataset), len(self.label_dataset))
+        self.len = min(len(self.text_dataset), len(self.label_dataset))
 
     def __len__(self):
-        return self.len
+        return 40
 
     def __getitem__(self, idx):
 
