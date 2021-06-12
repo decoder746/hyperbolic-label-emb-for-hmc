@@ -435,12 +435,12 @@ if __name__ == "__main__":
     logging.info(args)
 
     # Datasets and Dataloaders
-    try:
-        trainvalset = pickle.load(open(f"{args.dataset}/train.pkl", "rb"))
-    except:
+    # try:
+    #     trainvalset = pickle.load(open(f"{args.dataset}/train.pkl", "rb"))
+    # except:
         # json_data_file, label_file, vocab_dict=None, n_tokens=256, nnegs=5
-        trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 256, 5)
-        pickle.dump(trainvalset, open(f"{args.dataset}/train.pkl", "wb"))
+    trainvalset = TextLabelDatasetBatch(f"{args.dataset}/{args.dataset}_train.json", f"{args.dataset}/{args.dataset}_labels.txt", None, 256, 5)
+    pickle.dump(trainvalset, open(f"{args.dataset}/train.pkl", "wb"))
 
     # Split into train and val sets
     trainset, valset = torch.utils.data.dataset.random_split(trainvalset, 
